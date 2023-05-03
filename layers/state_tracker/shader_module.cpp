@@ -1709,7 +1709,8 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const SHADER_MODULE_STATE& 
       image_dim(base_type.FindImageDim()),
       is_image_array(base_type.IsArrayed()),
       is_multisampled(base_type.IsMultisampled()),
-      is_storage_buffer(IsStorageBuffer(*this)) {
+      is_storage_buffer(IsStorageBuffer(*this)),
+      reqs(0) {
     const auto& static_data_ = module_state.static_data_;
     // Handle anything specific to the base type
     switch (base_type.Opcode()) {
@@ -1871,6 +1872,36 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const SHADER_MODULE_STATE& 
     // Type independent checks
     if (!module_state.FindVariableAccesses(id, static_data_.atomic_pointer_ids, true).empty()) {
         is_atomic_operation = true;
+    }
+
+    if (is_atomic_operation) reqs |= DESCRIPTOR_REQ_VIEW_ATOMIC_OPERATION;
+    if (is_sampler_sampled) reqs |= DESCRIPTOR_REQ_SAMPLER_SAMPLED;
+    if (is_sampler_implicitLod_dref_proj) reqs |= DESCRIPTOR_REQ_SAMPLER_IMPLICITLOD_DREF_PROJ;
+    if (is_sampler_bias_offset) reqs |= DESCRIPTOR_REQ_SAMPLER_BIAS_OFFSET;
+    if (is_read_without_format) reqs |= DESCRIPTOR_REQ_IMAGE_READ_WITHOUT_FORMAT;
+    if (is_write_without_format) reqs |= DESCRIPTOR_REQ_IMAGE_WRITE_WITHOUT_FORMAT;
+    if (is_dref_operation) reqs |= DESCRIPTOR_REQ_IMAGE_DREF;
+
+    if (image_format_type == NumericTypeFloat) reqs |= DESCRIPTOR_REQ_COMPONENT_TYPE_FLOAT;
+    if (image_format_type == NumericTypeSint) reqs |= DESCRIPTOR_REQ_COMPONENT_TYPE_SINT;
+    if (image_format_type == NumericTypeUint) reqs |= DESCRIPTOR_REQ_COMPONENT_TYPE_UINT;
+
+    if (image_dim == spv::Dim1D) {
+        reqs |= (is_image_array) ? DESCRIPTOR_REQ_VIEW_TYPE_1D_ARRAY : DESCRIPTOR_REQ_VIEW_TYPE_1D;
+    }
+
+    if (image_dim == spv::Dim2D) {
+        reqs |= (is_multisampled) ? DESCRIPTOR_REQ_MULTI_SAMPLE : DESCRIPTOR_REQ_SINGLE_SAMPLE;
+        reqs |= (is_image_array) ? DESCRIPTOR_REQ_VIEW_TYPE_2D_ARRAY : DESCRIPTOR_REQ_VIEW_TYPE_2D;
+    }
+
+    if (image_dim == spv::Dim3D) reqs |= DESCRIPTOR_REQ_VIEW_TYPE_3D;
+
+    if (image_dim == spv::DimCube) {
+        reqs |= (is_image_array) ? DESCRIPTOR_REQ_VIEW_TYPE_CUBE_ARRAY : DESCRIPTOR_REQ_VIEW_TYPE_CUBE;
+    }
+    if (image_dim == spv::DimSubpassData) {
+        reqs |= (is_multisampled) ? DESCRIPTOR_REQ_MULTI_SAMPLE : DESCRIPTOR_REQ_SINGLE_SAMPLE;
     }
 }
 
