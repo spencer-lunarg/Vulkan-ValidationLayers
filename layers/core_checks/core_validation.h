@@ -773,7 +773,7 @@ class CoreChecks : public ValidationStateTracker {
         bool record_time_validate;
         std::optional<vvl::unordered_map<VkImageView, VkImageLayout>>& checked_layouts;
     };
-    using DescriptorBindingInfo = std::pair<const uint32_t, DescriptorRequirement>;
+    using DescriptorBindingInfo = std::pair<const uint32_t, const ResourceInterfaceVariable*>;
 
     bool ValidateDescriptorSetBindingData(const DescriptorContext& context, const DescriptorBindingInfo& binding_info,
                                           const cvdescriptorset::DescriptorBinding& binding) const;

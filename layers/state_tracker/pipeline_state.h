@@ -42,21 +42,8 @@ class RENDER_PASS_STATE;
 struct SHADER_MODULE_STATE;
 class PIPELINE_STATE;
 
-struct DescriptorRequirement {
-    const ResourceInterfaceVariable *variable;
-    DescriptorRequirement() {}
-};
-
-inline bool operator==(const DescriptorRequirement &a, const DescriptorRequirement &b) noexcept {
-    return a.variable->reqs == b.variable->reqs;
-}
-
-inline bool operator<(const DescriptorRequirement &a, const DescriptorRequirement &b) noexcept {
-    return a.variable->reqs < b.variable->reqs;
-}
-
 // < binding index (of descriptor set) : meta data >
-typedef std::map<uint32_t, DescriptorRequirement> BindingVariableMap;
+typedef std::map<uint32_t, const ResourceInterfaceVariable *> BindingVariableMap;
 
 struct PipelineStageState {
     std::shared_ptr<const SHADER_MODULE_STATE> module_state;

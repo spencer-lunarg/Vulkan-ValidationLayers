@@ -323,6 +323,10 @@ struct ResourceInterfaceVariable : public VariableBase {
     static bool IsStorageBuffer(const ResourceInterfaceVariable &variable);
 };
 
+inline bool operator==(const ResourceInterfaceVariable &a, const ResourceInterfaceVariable &b) noexcept { return a.reqs == b.reqs; }
+
+inline bool operator<(const ResourceInterfaceVariable &a, const ResourceInterfaceVariable &b) noexcept { return a.reqs < b.reqs; }
+
 // Contains all the details for a OpTypeStruct for Push Constants
 // TODO - Replace with TypeStructInfo
 struct StructInfo {
