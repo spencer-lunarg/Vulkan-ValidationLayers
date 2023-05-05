@@ -43,7 +43,7 @@ struct SHADER_MODULE_STATE;
 class PIPELINE_STATE;
 
 // < binding index (of descriptor set) : meta data >
-typedef std::map<uint32_t, const ResourceInterfaceVariable *> BindingVariableMap;
+typedef std::unordered_map<uint32_t, const ResourceInterfaceVariable &> BindingVariableMap;
 
 struct PipelineStageState {
     std::shared_ptr<const SHADER_MODULE_STATE> module_state;

@@ -135,7 +135,7 @@ PIPELINE_STATE::ActiveSlotMap PIPELINE_STATE::GetActiveSlots(const StageStateVec
         // Capture descriptor uses for the pipeline
         for (const auto &variable : stage.entrypoint->resource_interface_variables) {
             // While validating shaders capture which slots are used by the pipeline
-            active_slots[variable.decorations.set][variable.decorations.binding] = &variable;
+            active_slots[variable.decorations.set].insert({variable.decorations.binding, variable});
         }
     }
     return active_slots;
