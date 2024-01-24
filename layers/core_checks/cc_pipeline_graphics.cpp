@@ -487,6 +487,11 @@ bool CoreChecks::ValidateGraphicsPipelineLibrary(const vvl::Pipeline &pipeline, 
     // note this is the incoming layout an not ones from the pipeline library
     const auto pipeline_layout_state = Get<vvl::PipelineLayout>(pipeline.GetCreateInfo<VkGraphicsPipelineCreateInfo>().layout);
 
+    if ((pipeline.fragment_shader_state || pipeline.pre_raster_state) && !pipeline_layout_state) {
+        skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-layout-06602", device, create_info_loc.dot(Field::layout),
+                         "is not a valid VkPipelineLayout.");
+    }
+
     if (pipeline.HasFullState()) {
         if (is_create_library) {
             skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-flags-06608", device, create_info_loc.dot(Field::flags),
