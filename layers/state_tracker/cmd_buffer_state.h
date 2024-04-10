@@ -349,6 +349,7 @@ class CommandBuffer : public RefcountedStateObject {
     // The RenderPass created from vkCmdBeginRenderPass or vkCmdBeginRendering
     std::shared_ptr<vvl::RenderPass> activeRenderPass;
     // Used for both type of renderPass
+    std::shared_ptr<std::vector<vvl::ImageView *>> active_attachments;
     vvl::unordered_set<uint32_t> active_color_attachments_index;
     uint32_t active_render_pass_device_mask;
     bool has_render_pass_striped;
@@ -356,8 +357,6 @@ class CommandBuffer : public RefcountedStateObject {
     // only when not using dynamic rendering
     vku::safe_VkRenderPassBeginInfo active_render_pass_begin_info;
     std::shared_ptr<std::vector<SubpassInfo>> active_subpasses;
-    std::shared_ptr<std::vector<vvl::ImageView *>> active_attachments;
-    std::set<std::shared_ptr<vvl::ImageView>> attachments_view_states;
 
     VkSubpassContents activeSubpassContents;
     uint32_t GetActiveSubpass() const { return active_subpass_; }
