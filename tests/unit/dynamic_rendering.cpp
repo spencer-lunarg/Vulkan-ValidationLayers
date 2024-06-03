@@ -2487,6 +2487,7 @@ TEST_F(NegativeDynamicRendering, CreateGraphicsPipelineWithAttachmentSampleCount
     AddRequiredExtensions(VK_NV_FRAMEBUFFER_MIXED_SAMPLES_EXTENSION_NAME);
     RETURN_IF_SKIP(InitBasicDynamicRendering());
 
+    printf("--------------\n");
     VkFormat color_format = VK_FORMAT_R8G8B8A8_UNORM;
 
     VkAttachmentSampleCountInfoNV sample_count_info_amd = vku::InitStructHelper();
@@ -2500,8 +2501,10 @@ TEST_F(NegativeDynamicRendering, CreateGraphicsPipelineWithAttachmentSampleCount
     CreatePipelineHelper pipe(*this, &pipeline_rendering_info);
     pipe.gp_ci_.renderPass = VK_NULL_HANDLE;
 
+    printf("AAAA\n");
     m_errorMonitor->SetDesiredError("VUID-VkGraphicsPipelineCreateInfo-depthStencilAttachmentSamples-06593");
     pipe.CreateGraphicsPipeline();
+    printf("BBBB\n");
     m_errorMonitor->VerifyFound();
 }
 
