@@ -6229,6 +6229,34 @@ TEST_F(NegativeSyncVal, RenderPassStoreOpNone) {
     m_commandBuffer->end();
 }
 
+TEST_F(NegativeSyncVal, ExpandedMetaStage) {
+    TEST_DESCRIPTION("Barrier makes reads visible instead of writes on ALL_COMMANDS meta stage");
+    SetTargetApiVersion(VK_API_VERSION_1_3);
+    AddRequiredFeature(vkt::Feature::synchronization2);
+    RETURN_IF_SKIP(InitSyncVal());
+
+    vkt::Buffer buffer_a(*m_device, 256, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    vkt::Buffer buffer_b(*m_device, 256, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+
+    VkMemoryBarrier2 barrier = vku::InitStructHelper();
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;  // Read access does not protect from subsequent copy writes
+    VkDependencyInfoKHR dep_info = vku::InitStructHelper();
+    dep_info.memoryBarrierCount = 1;
+    dep_info.pMemoryBarriers = &barrier;
+
+    m_command_buffer.begin();
+    m_command_buffer.Copy(buffer_a, buffer_b);
+    vk::CmdPipelineBarrier2(m_command_buffer.handle(), &dep_info);
+    m_command_buffer.Copy(buffer_a, buffer_b);
+    m_command_buffer.end();
+
+    m_default_queue->Submit2(m_command_buffer);
+    m_default_queue->Wait();
+}
+
 TEST_F(NegativeSyncVal, DebugResourceName) {
     TEST_DESCRIPTION("Test the buffer debug name is mentioned in the error message");
     AddRequiredExtensions(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
