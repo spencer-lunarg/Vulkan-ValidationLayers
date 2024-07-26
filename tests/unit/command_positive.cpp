@@ -298,6 +298,19 @@ TEST_F(PositiveCommand, DISABLED_ClearRectWith2DArray) {
     }
 }
 
+TEST_F(PositiveCommand, abc) {
+    AddRequiredExtensions(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    RETURN_IF_SKIP(Init());
+
+    auto x = (PFN_vkCmdInsertDebugUtilsLabelEXT)vk::GetDeviceProcAddr(device(), "vkCmdInsertDebugUtilsLabelEXT");
+    auto y = (PFN_vkCmdInsertDebugUtilsLabelEXT)vk::GetInstanceProcAddr(instance(), "vkCmdInsertDebugUtilsLabelEXT");
+
+    __android_log_print(ANDROID_LOG_INFO, "VulkanLayerValidationTests", "From Instance %p", x);
+    __android_log_print(ANDROID_LOG_INFO, "VulkanLayerValidationTests", "From Device %p", y);
+    __android_log_print(ANDROID_LOG_INFO, "VulkanLayerValidationTests", "vk::CmdInsertDebugUtilsLabelEXT %p",
+                        vk::CmdInsertDebugUtilsLabelEXT);
+}
+
 TEST_F(PositiveCommand, ThreadedCommandBuffersWithLabels) {
     AddRequiredExtensions(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     RETURN_IF_SKIP(Init());
