@@ -4778,7 +4778,7 @@ void ValidationStateTracker::PostCallRecordCreateShaderModule(VkDevice device, c
                                                               VkShaderModule *pShaderModule, const RecordObject &record_obj,
                                                               chassis::CreateShaderModule &chassis_state) {
     if (VK_SUCCESS != record_obj.result) return;
-    Add(std::make_shared<vvl::ShaderModule>(*pShaderModule, chassis_state.module_state, chassis_state.unique_shader_id));
+    Add(std::make_shared<vvl::ShaderModule>(*pShaderModule, chassis_state.module_state));
 }
 
 void ValidationStateTracker::PostCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount,
@@ -5541,7 +5541,7 @@ void ValidationStateTracker::PostCallRecordGetShaderModuleCreateInfoIdentifierEX
                                                                                   VkShaderModuleIdentifierEXT *pIdentifier,
                                                                                   const RecordObject &record_obj) {
     WriteLockGuard guard(shader_identifier_map_lock_);
-    shader_identifier_map_.emplace(*pIdentifier, std::make_shared<vvl::ShaderModule>(0));
+    shader_identifier_map_.emplace(*pIdentifier, std::make_shared<vvl::ShaderModule>());
 }
 
 void ValidationStateTracker::PreCallRecordCmdBindShadersEXT(VkCommandBuffer commandBuffer, uint32_t stageCount,

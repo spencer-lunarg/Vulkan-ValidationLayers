@@ -41,11 +41,11 @@ struct CreateShaderModule {
     std::shared_ptr<spirv::Module> module_state;  // contains SPIR-V to validate
     spirv::StatelessData stateless_data;
 
-    uint32_t unique_shader_id = 0;
+    // uint32_t unique_shader_id = 0;
 
     // Pass the instrumented SPIR-V info from PreCallRecord to Dispatch (so GPU-AV logic can run with it)
-    VkShaderModuleCreateInfo instrumented_create_info;
-    std::vector<uint32_t> instrumented_spirv;
+    // VkShaderModuleCreateInfo instrumented_create_info;
+    // std::vector<uint32_t> instrumented_spirv;
 };
 
 // VkShaderEXT (VK_EXT_shader_object)
@@ -80,6 +80,14 @@ using ShaderModuleUniqueIds = std::unordered_map<VkShaderStageFlagBits, uint32_t
 struct CreateGraphicsPipelines {
     std::vector<vku::safe_VkGraphicsPipelineCreateInfo> modified_create_infos;
     std::vector<ShaderModuleUniqueIds> shader_unique_id_maps;
+
+    // Maps original VkShaderModule to an ID to map back during error reporting
+    std::unordered_map<VkShaderModule, uint32_t> shader_module_unique_id_map;
+    // We create a VkShaderModule that is instrumented and need to delete before leaving the pipeline call
+    std::vector<VkShaderModule> instrumented_shader_module;
+    // Hold the SPIR-V until the pipeline call compiles it
+    std::vector<std::vector<uint32_t>> instrumented_spirv;
+
     const VkGraphicsPipelineCreateInfo* pCreateInfos;
     // Used to know if VkShaderModuleCreateInfo is passed down VkPipelineShaderStageCreateInfo
     bool passed_in_shader_stage_ci = false;
@@ -91,6 +99,14 @@ struct CreateGraphicsPipelines {
 struct CreateComputePipelines {
     std::vector<vku::safe_VkComputePipelineCreateInfo> modified_create_infos;
     std::vector<ShaderModuleUniqueIds> shader_unique_id_maps;  // not used, here for template function
+
+    // Maps original VkShaderModule to an ID to map back during error reporting
+    std::unordered_map<VkShaderModule, uint32_t> shader_module_unique_id_map;
+    // We create a VkShaderModule that is instrumented and need to delete before leaving the pipeline call
+    std::vector<VkShaderModule> instrumented_shader_module;
+    // Hold the SPIR-V until the pipeline call compiles it
+    std::vector<std::vector<uint32_t>> instrumented_spirv;
+
     const VkComputePipelineCreateInfo* pCreateInfos;
     // Used to know if VkShaderModuleCreateInfo is passed down VkPipelineShaderStageCreateInfo
     bool passed_in_shader_stage_ci = false;
@@ -102,6 +118,14 @@ struct CreateComputePipelines {
 struct CreateRayTracingPipelinesNV {
     std::vector<vku::safe_VkRayTracingPipelineCreateInfoCommon> modified_create_infos;
     std::vector<ShaderModuleUniqueIds> shader_unique_id_maps;  // not used, here for template function
+
+    // Maps original VkShaderModule to an ID to map back during error reporting
+    std::unordered_map<VkShaderModule, uint32_t> shader_module_unique_id_map;
+    // We create a VkShaderModule that is instrumented and need to delete before leaving the pipeline call
+    std::vector<VkShaderModule> instrumented_shader_module;
+    // Hold the SPIR-V until the pipeline call compiles it
+    std::vector<std::vector<uint32_t>> instrumented_spirv;
+
     const VkRayTracingPipelineCreateInfoNV* pCreateInfos;
     bool passed_in_shader_stage_ci = false;
 
@@ -111,6 +135,14 @@ struct CreateRayTracingPipelinesNV {
 struct CreateRayTracingPipelinesKHR {
     std::vector<vku::safe_VkRayTracingPipelineCreateInfoCommon> modified_create_infos;
     std::vector<ShaderModuleUniqueIds> shader_unique_id_maps;  // not used, here for template function
+
+    // Maps original VkShaderModule to an ID to map back during error reporting
+    std::unordered_map<VkShaderModule, uint32_t> shader_module_unique_id_map;
+    // We create a VkShaderModule that is instrumented and need to delete before leaving the pipeline call
+    std::vector<VkShaderModule> instrumented_shader_module;
+    // Hold the SPIR-V until the pipeline call compiles it
+    std::vector<std::vector<uint32_t>> instrumented_spirv;
+
     const VkRayTracingPipelineCreateInfoKHR* pCreateInfos;
     bool passed_in_shader_stage_ci = false;
 
