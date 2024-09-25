@@ -35,18 +35,18 @@ TEST_F(PositiveBuffer, OwnershipTranfers) {
     // Let gfx own it.
     buffer_barrier.srcQueueFamilyIndex = m_device->graphics_queue_node_index_;
     buffer_barrier.dstQueueFamilyIndex = m_device->graphics_queue_node_index_;
-    ValidOwnershipTransferOp(m_errorMonitor, m_default_queue, m_commandBuffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+    ValidOwnershipTransferOp(m_errorMonitor, m_default_queue, m_command_buffer, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
                              VK_PIPELINE_STAGE_TRANSFER_BIT, &buffer_barrier, nullptr);
 
     // Transfer it to non-gfx
     buffer_barrier.dstQueueFamilyIndex = no_gfx_queue->family_index;
-    ValidOwnershipTransfer(m_errorMonitor, m_default_queue, m_commandBuffer, no_gfx_queue, &no_gfx_cb,
+    ValidOwnershipTransfer(m_errorMonitor, m_default_queue, m_command_buffer, no_gfx_queue, no_gfx_cb,
                            VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, &buffer_barrier, nullptr);
 
     // Transfer it to gfx
     buffer_barrier.srcQueueFamilyIndex = no_gfx_queue->family_index;
     buffer_barrier.dstQueueFamilyIndex = m_device->graphics_queue_node_index_;
-    ValidOwnershipTransfer(m_errorMonitor, no_gfx_queue, &no_gfx_cb, m_default_queue, m_commandBuffer,
+    ValidOwnershipTransfer(m_errorMonitor, no_gfx_queue, no_gfx_cb, m_default_queue, m_command_buffer,
                            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, &buffer_barrier, nullptr);
 }
 
@@ -174,15 +174,15 @@ TEST_F(PositiveBuffer, IndexBuffer2Size) {
 
     const uint32_t buffer_size = 32;
     vkt::Buffer buffer(*m_device, buffer_size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    m_commandBuffer->begin();
-    m_commandBuffer->BeginRenderPass(m_renderPassBeginInfo);
+    m_command_buffer.begin();
+    m_command_buffer.BeginRenderPass(m_renderPassBeginInfo);
 
-    vk::CmdBindIndexBuffer2KHR(m_commandBuffer->handle(), buffer.handle(), 4, 8, VK_INDEX_TYPE_UINT32);
+    vk::CmdBindIndexBuffer2KHR(m_command_buffer.handle(), buffer.handle(), 4, 8, VK_INDEX_TYPE_UINT32);
 
-    vk::CmdBindIndexBuffer2KHR(m_commandBuffer->handle(), buffer.handle(), 0, buffer_size, VK_INDEX_TYPE_UINT32);
+    vk::CmdBindIndexBuffer2KHR(m_command_buffer.handle(), buffer.handle(), 0, buffer_size, VK_INDEX_TYPE_UINT32);
 
-    m_commandBuffer->EndRenderPass();
-    m_commandBuffer->end();
+    m_command_buffer.EndRenderPass();
+    m_command_buffer.end();
 }
 
 TEST_F(PositiveBuffer, IndexBufferNull) {
@@ -195,15 +195,15 @@ TEST_F(PositiveBuffer, IndexBufferNull) {
     CreatePipelineHelper pipe(*this);
     pipe.CreateGraphicsPipeline();
 
-    m_commandBuffer->begin();
-    m_commandBuffer->BeginRenderPass(m_renderPassBeginInfo);
-    vk::CmdBindPipeline(m_commandBuffer->handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.Handle());
-    vk::CmdDrawIndexed(m_commandBuffer->handle(), 0, 1, 0, 0, 0);
+    m_command_buffer.begin();
+    m_command_buffer.BeginRenderPass(m_renderPassBeginInfo);
+    vk::CmdBindPipeline(m_command_buffer.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.Handle());
+    vk::CmdDrawIndexed(m_command_buffer.handle(), 0, 1, 0, 0, 0);
 
-    vk::CmdBindIndexBuffer(m_commandBuffer->handle(), VK_NULL_HANDLE, 0, VK_INDEX_TYPE_UINT32);
-    vk::CmdDrawIndexed(m_commandBuffer->handle(), 0, 1, 0, 0, 0);
-    m_commandBuffer->EndRenderPass();
-    m_commandBuffer->end();
+    vk::CmdBindIndexBuffer(m_command_buffer.handle(), VK_NULL_HANDLE, 0, VK_INDEX_TYPE_UINT32);
+    vk::CmdDrawIndexed(m_command_buffer.handle(), 0, 1, 0, 0, 0);
+    m_command_buffer.EndRenderPass();
+    m_command_buffer.end();
 }
 
 TEST_F(PositiveBuffer, BufferViewUsageBasic) {

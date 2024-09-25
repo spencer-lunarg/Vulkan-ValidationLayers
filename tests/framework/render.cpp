@@ -44,7 +44,6 @@ typename C::iterator RemoveIf(C &container, F &&fn) {
 VkRenderFramework::VkRenderFramework()
     : instance_(nullptr),
       m_device(nullptr),
-      m_commandBuffer(nullptr),
       m_renderPass(VK_NULL_HANDLE),
       m_vertex_buffer(nullptr),
       m_width(256),   // default window width
@@ -486,7 +485,6 @@ void VkRenderFramework::ShutdownFramework() {
     }
 
     m_command_buffer.destroy();
-    m_commandBuffer = nullptr;
     m_command_pool.destroy();
 
     if (m_second_queue) {
@@ -680,7 +678,6 @@ void VkRenderFramework::InitState(VkPhysicalDeviceFeatures *features, void *crea
 
     m_command_pool.Init(*m_device, m_device->graphics_queue_node_index_, flags);
     m_command_buffer.Init(*m_device, m_command_pool);
-    m_commandBuffer = &m_command_buffer;
 
     if (m_second_queue) {
         m_second_command_pool.Init(*m_device, m_second_queue->family_index, flags);
@@ -1102,7 +1099,7 @@ void VkRenderFramework::SetDefaultDynamicStatesExclude(const std::vector<VkDynam
         m_vertex_buffer = new vkt::Buffer(*m_device, 32u, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     }
 
-    VkCommandBuffer cmdBuffer = commandBuffer ? commandBuffer : m_commandBuffer->handle();
+    VkCommandBuffer cmdBuffer = commandBuffer ? commandBuffer : m_command_buffer.handle();
     VkViewport viewport = {0, 0, static_cast<float>(m_width), static_cast<float>(m_height), 0.0f, 1.0f};
     VkRect2D scissor = {{0, 0}, {m_width, m_height}};
     if (!excluded(VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT)) vk::CmdSetViewportWithCountEXT(cmdBuffer, 1u, &viewport);
