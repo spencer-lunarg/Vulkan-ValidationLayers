@@ -14,10 +14,12 @@
  */
 
 #include "buffer_device_address_pass.h"
+#include "generated/spirv_grammar_helper.h"
 #include "module.h"
 #include <cstdint>
 #include <spirv/unified1/spirv.hpp>
 #include <iostream>
+#include "type_manager.h"
 #include "utils/math_utils.h"
 #include "gpuav/shaders/gpuav_error_header.h"
 
@@ -145,7 +147,8 @@ void BufferDeviceAddressPass::CreateFunctionCallAlignmentReport(BasicBlock& bloc
     block.CreateInstruction(spv::OpFunctionCall, {void_type, function_result, function_def}, inst_it);
 }
 
-bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta) {
+bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta,
+                                                      bool pre_pass) {
     const uint32_t opcode = inst.Opcode();
     if (opcode == spv::OpLoad || opcode == spv::OpStore) {
         // We only care if there is an Aligned Memory Operands
@@ -203,6 +206,36 @@ bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, 
     // Will mark this is a struct acess to inform the user
     meta.type_is_struct = accessed_type->spv_type_ == SpvType::kStruct;
 
+    // opaccesschain -> OpLoad/OpBitcast -> OpTypePointer (PSB) -> OpTypeStruct
+    if (pre_pass && pointer_inst->IsAccessChain()) {
+        const Instruction* access_chain_inst = nullptr;
+        const Instruction* next_inst = pointer_inst;
+        // First walk back to the outer most access chain
+        while (next_inst && next_inst->IsAccessChain()) {
+            access_chain_inst = next_inst;
+            const uint32_t access_chain_base_id = next_inst->Operand(0);
+            next_inst = function.FindInstruction(access_chain_base_id);
+        }
+        if (access_chain_inst && access_chain_inst->IsAccessChain() && next_inst) {
+            const Type* load_type_pointer = module_.type_manager_.FindTypeById(next_inst->TypeId());
+            if (load_type_pointer && load_type_pointer->spv_type_ == SpvType::kPointer &&
+                load_type_pointer->inst_.StorageClass() == spv::StorageClassPhysicalStorageBuffer) {
+                const Type* struct_type = module_.type_manager_.FindTypeById(load_type_pointer->inst_.Operand(1));
+                if (struct_type && struct_type->spv_type_ == SpvType::kStruct) {
+                    const Constant* struct_index_constant = module_.type_manager_.FindConstantById(access_chain_inst->Operand(1));
+                    if (struct_index_constant) {
+                        const uint32_t struct_index = struct_index_constant->GetValueUint32();
+                        Range& range = block_struct_range_map_[struct_type->Id()];
+                        range.begin = std::min(range.begin, struct_index);
+                        range.end = std::max(range.end, struct_index);
+                        range.instructions.insert(inst.GetPositionIndex());
+                        block_skip_list_.insert(inst.GetPositionIndex());
+                    }
+                }
+            }
+        }
+    }
+
     meta.target_instruction = &inst;
     return true;
 }
@@ -227,10 +260,22 @@ bool BufferDeviceAddressPass::Instrument() {
             }
             auto& block_instructions = current_block.instructions_;
 
+            block_struct_range_map_.clear();
+            block_skip_list_.clear();
+
+            for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
+                InstructionMeta meta;
+                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta, true)) continue;
+            }
+            printf("---[ %u ] skip %zu ---\n", module_.settings_.shader_id, block_skip_list_.size());
+            for (const auto& [struct_id, range] : block_struct_range_map_) {
+                printf("\t[%u] | (%zu) | %u - %u\n", struct_id, range.instructions.size(), range.begin, range.end);
+            }
+
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                 InstructionMeta meta;
                 // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) {
+                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta, false)) {
                     if (function->IsReturn(*(inst_it->get()))) {
                         CreateFunctionCallAlignmentReport(current_block, &inst_it);
                     }

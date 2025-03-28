@@ -15,6 +15,8 @@
 #pragma once
 
 #include <stdint.h>
+#include "containers/custom_containers.h"
+#include "containers/limits.h"
 #include "pass.h"
 
 namespace gpuav {
@@ -39,7 +41,7 @@ class BufferDeviceAddressPass : public Pass {
         bool type_is_struct = false;
     };
 
-    bool RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta);
+    bool RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta, bool pre_pass);
     uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
                                 const InstructionMeta& meta);
 
@@ -59,6 +61,17 @@ class BufferDeviceAddressPass : public Pass {
     uint32_t link_function_id_ = 0;
     uint32_t link_alignment_check_id_ = 0;
     uint32_t link_alignment_report_id_ = 0;
+
+    struct Range {
+        uint32_t begin = vvl::kU32Max;
+        uint32_t begin_instruction = 0;
+        uint32_t end = 0;
+        uint32_t end_instruction = 0;
+        vvl::unordered_set<uint32_t> instructions;
+    };
+
+    vvl::unordered_map<uint32_t, Range> block_struct_range_map_;
+    vvl::unordered_set<uint32_t> block_skip_list_;
 };
 
 }  // namespace spirv
