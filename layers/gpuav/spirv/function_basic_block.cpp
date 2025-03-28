@@ -14,6 +14,7 @@
  */
 
 #include "function_basic_block.h"
+#include <spirv/unified1/spirv.hpp>
 #include "state_tracker/shader_instruction.h"
 #include "module.h"
 
@@ -151,6 +152,11 @@ void Function::ReplaceAllUsesWith(uint32_t old_word, uint32_t new_word) {
             inst->ReplaceOperandId(old_word, new_word);
         }
     }
+}
+
+bool Function::IsReturn(const Instruction& inst) {
+    // Currently just check if a return opcode
+    return inst.Opcode() == spv::OpReturn || inst.Opcode() == spv::OpReturnValue;
 }
 
 }  // namespace spirv

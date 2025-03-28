@@ -522,14 +522,31 @@ const Constant& TypeManager::GetConstantZeroFloat32() {
 }
 
 const Constant& TypeManager::GetConstantZeroVec3() {
-    const Type& float_32_type = GetTypeFloat(32);
-    const Type& vec3_type = GetTypeVector(float_32_type, 3);
-    const uint32_t float32_0_id = module_.type_manager_.GetConstantZeroFloat32().Id();
+    if (!vec3_zero_constants_) {
+        const Type& float_32_type = GetTypeFloat(32);
+        const Type& vec3_type = GetTypeVector(float_32_type, 3);
+        const uint32_t float32_0_id = module_.type_manager_.GetConstantZeroFloat32().Id();
 
-    const uint32_t constant_id = module_.TakeNextId();
-    auto new_inst = std::make_unique<Instruction>(6, spv::OpConstantComposite);
-    new_inst->Fill({vec3_type.Id(), constant_id, float32_0_id, float32_0_id, float32_0_id});
-    return AddConstant(std::move(new_inst), vec3_type);
+        const uint32_t constant_id = module_.TakeNextId();
+        auto new_inst = std::make_unique<Instruction>(6, spv::OpConstantComposite);
+        new_inst->Fill({vec3_type.Id(), constant_id, float32_0_id, float32_0_id, float32_0_id});
+        vec3_zero_constants_ = &AddConstant(std::move(new_inst), vec3_type);
+    }
+    return *vec3_zero_constants_;
+}
+
+const Constant& TypeManager::GetConstantZeroUvec4() {
+    if (!uvec4_zero_constants_) {
+        const Type& uint32_type = module_.type_manager_.GetTypeInt(32, false);
+        const Type& uvec4_type = module_.type_manager_.GetTypeVector(uint32_type, 4);
+        const uint32_t uint32_0_id = module_.type_manager_.GetConstantZeroUint32().Id();
+
+        const uint32_t constant_id = module_.TakeNextId();
+        auto new_inst = std::make_unique<Instruction>(7, spv::OpConstantComposite);
+        new_inst->Fill({uvec4_type.Id(), constant_id, uint32_0_id, uint32_0_id, uint32_0_id, uint32_0_id});
+        uvec4_zero_constants_ = &AddConstant(std::move(new_inst), uvec4_type);
+    }
+    return *uvec4_zero_constants_;
 }
 
 const Constant& TypeManager::GetConstantNull(const Type& type) {

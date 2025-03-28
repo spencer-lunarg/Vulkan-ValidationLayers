@@ -24,6 +24,7 @@
 #include <iostream>
 
 #include "generated/device_features.h"
+#include "link.h"
 
 namespace gpuav {
 namespace spirv {
@@ -336,6 +337,12 @@ void Module::AddInterfaceVariables(uint32_t id, spv::StorageClass storage_class)
     const uint32_t spirv_version_1_4 = 0x00010400;
     if (header_.version >= spirv_version_1_4 || storage_class == spv::StorageClassInput ||
         storage_class == spv::StorageClassOutput) {
+        // Prevent duplicate from being added
+        const auto insert_pair = added_interface_variables_.insert(id);
+        if (!insert_pair.second) {
+            return;
+        }
+
         // Currently just apply to all Entrypoint as it should be ok to have a global variable in there even if it can't dynamically
         // touch the new function
         for (auto& entry_point : entry_points_) {
@@ -544,28 +551,35 @@ void Module::LinkFunction(const LinkInfo& info) {
             }
             id_swap_map[old_result_id] = constant->Id();
         } else if (opcode == spv::OpVariable) {
-            // Add in all variables outside of functions
-            const uint32_t new_result_id = TakeNextId();
             const spv::StorageClass storage_class = new_inst->StorageClass();
-            AddInterfaceVariables(new_result_id, storage_class);
-            id_swap_map[old_result_id] = new_result_id;
-            new_inst->ReplaceResultId(new_result_id);
-            new_inst->ReplaceLinkedId(id_swap_map);
+            if (storage_class == spv::StorageClassPrivate && ((info.offline.flags & SwapPrivateVariable) != 0)) {
+                // Variable already is in shader, just mark the new result ID
+                AddInterfaceVariables(info.private_variable_id, storage_class);
+                id_swap_map[old_result_id] = info.private_variable_id;
+            } else {
+                // Add in all variables outside of functions
+                const uint32_t new_result_id = TakeNextId();
+                AddInterfaceVariables(new_result_id, storage_class);
+                id_swap_map[old_result_id] = new_result_id;
+                new_inst->ReplaceResultId(new_result_id);
+                new_inst->ReplaceLinkedId(id_swap_map);
 
-            const Type* type = type_manager_.FindTypeById(new_inst->TypeId());
+                // Can't grab until after we run ReplaceLinkedId()
+                const Type* type = type_manager_.FindTypeById(new_inst->TypeId());
 
-            if (storage_class == spv::StorageClassPrivate && type->spv_type_ == SpvType::kPointer &&
-                ((info.offline.flags & ZeroInitializeUintPrivateVariables) != 0)) {
-                const Type* pointer_type = type_manager_.FindTypeById(type->inst_.Word(3));
-                // If we hit this assert, we need to add support for another type
-                assert(pointer_type && pointer_type->spv_type_ == SpvType::kInt);
-                if (pointer_type->spv_type_ == SpvType::kInt) {
-                    const uint32_t uint32_0_id = type_manager_.GetConstantZeroUint32().Id();
-                    new_inst->AppendWord(uint32_0_id);
+                if (storage_class == spv::StorageClassPrivate && type->spv_type_ == SpvType::kPointer &&
+                    ((info.offline.flags & ZeroInitializeUintPrivateVariables) != 0)) {
+                    const Type* pointer_type = type_manager_.FindTypeById(type->inst_.Word(3));
+                    // If we hit this assert, we need to add support for another type
+                    assert(pointer_type && pointer_type->spv_type_ == SpvType::kInt);
+                    if (pointer_type->spv_type_ == SpvType::kInt) {
+                        const uint32_t uint32_0_id = type_manager_.GetConstantZeroUint32().Id();
+                        new_inst->AppendWord(uint32_0_id);
+                    }
                 }
-            }
 
-            type_manager_.AddVariable(std::move(new_inst), *type);
+                type_manager_.AddVariable(std::move(new_inst), *type);
+            }
         } else if (opcode == spv::OpDecorate || opcode == spv::OpMemberDecorate) {
             // We want to drop any SpecId we added
             if (opcode != spv::OpDecorate || new_inst->Word(2) != spv::DecorationSpecId) {

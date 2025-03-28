@@ -142,6 +142,7 @@ class TypeManager {
     const Constant& GetConstantZeroUint32();
     const Constant& GetConstantZeroFloat32();
     const Constant& GetConstantZeroVec3();
+    const Constant& GetConstantZeroUvec4();
     const Constant& GetConstantNull(const Type& type);
 
     const Variable& AddVariable(std::unique_ptr<Instruction> new_inst, const Type& type);
@@ -179,6 +180,8 @@ class TypeManager {
     std::vector<const Constant*> float_32bit_constants_;
     const Constant* uint_32bit_zero_constants_ = nullptr;
     const Constant* float_32bit_zero_constants_ = nullptr;
+    const Constant* vec3_zero_constants_ = nullptr;
+    const Constant* uvec4_zero_constants_ = nullptr;
     std::vector<const Constant*> null_constants_;
 
     std::vector<const Variable*> input_variables_;

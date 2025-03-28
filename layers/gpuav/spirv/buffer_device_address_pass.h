@@ -43,10 +43,22 @@ class BufferDeviceAddressPass : public Pass {
     uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
                                 const InstructionMeta& meta);
 
+    // Called when a Function starts
+    void ClearPrivateVariable(BasicBlock& block, InstructionIt* inst_it);
+    // Called when a Function ends
+    void CreateFunctionCallAlignmentReport(BasicBlock& block, InstructionIt* inst_it);
+
     uint32_t GetLinkFunctionId();
+    uint32_t GetLinkFunctionIdAlignmentCheck();
+    uint32_t GetLinkFunctionIdAlignmentReport();
+
+    uint32_t invalid_alignment_priavte_variable_id_ = 0;
+    uint32_t function_alignment_checks_ = 0;
 
     // Function IDs to link in
     uint32_t link_function_id_ = 0;
+    uint32_t link_alignment_check_id_ = 0;
+    uint32_t link_alignment_report_id_ = 0;
 };
 
 }  // namespace spirv

@@ -86,6 +86,8 @@ struct Function {
 
     void ReplaceAllUsesWith(uint32_t old_word, uint32_t new_word);
 
+    bool IsReturn(const Instruction& inst);
+
     Module& module_;
     // OpFunction and parameters
     InstructionList pre_block_inst_;

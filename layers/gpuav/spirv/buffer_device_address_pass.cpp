@@ -15,12 +15,15 @@
 
 #include "buffer_device_address_pass.h"
 #include "module.h"
+#include <cstdint>
 #include <spirv/unified1/spirv.hpp>
 #include <iostream>
 #include "utils/math_utils.h"
 #include "gpuav/shaders/gpuav_error_header.h"
 
 #include "generated/instrumentation_buffer_device_address_comp.h"
+#include "generated/instrumentation_buffer_device_address_alignment_check_comp.h"
+#include "generated/instrumentation_buffer_device_address_alignment_report_comp.h"
 
 namespace gpuav {
 namespace spirv {
@@ -29,10 +32,37 @@ const static OfflineLinkInfo link_info = {instrumentation_buffer_device_address_
                                           instrumentation_buffer_device_address_comp_size, "inst_buffer_device_address",
                                           ZeroInitializeUintPrivateVariables};
 
+const static OfflineLinkInfo link_info_check = {instrumentation_buffer_device_address_alignment_check_comp,
+                                                  instrumentation_buffer_device_address_alignment_check_comp_size,
+                                                  "inst_buffer_device_address_alignment_check", SwapPrivateVariable};
+const static OfflineLinkInfo link_info_report = {instrumentation_buffer_device_address_alignment_report_comp,
+                                                   instrumentation_buffer_device_address_alignment_report_comp_size,
+                                                   "inst_buffer_device_address_alignment_report", SwapPrivateVariable};
+
 BufferDeviceAddressPass::BufferDeviceAddressPass(Module& module) : Pass(module) { module.use_bda_ = true; }
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
 uint32_t BufferDeviceAddressPass::GetLinkFunctionId() { return module_.GetLinkFunction(link_function_id_, link_info); }
+
+uint32_t BufferDeviceAddressPass::GetLinkFunctionIdAlignmentCheck() {
+    if (link_alignment_check_id_ == 0) {
+        link_alignment_check_id_ = module_.TakeNextId();
+        assert(invalid_alignment_priavte_variable_id_ != 0);  // should have been set at top of function
+        module_.link_info_.emplace_back(
+            LinkInfo{link_info_check, link_alignment_check_id_, invalid_alignment_priavte_variable_id_});
+    }
+    return link_alignment_check_id_;
+}
+
+uint32_t BufferDeviceAddressPass::GetLinkFunctionIdAlignmentReport() {
+    if (link_alignment_report_id_ == 0) {
+        link_alignment_report_id_ = module_.TakeNextId();
+        assert(invalid_alignment_priavte_variable_id_ != 0);  // should have been set at top of function
+        module_.link_info_.emplace_back(
+            LinkInfo{link_info_report, link_alignment_report_id_, invalid_alignment_priavte_variable_id_});
+    }
+    return link_alignment_report_id_;
+}
 
 uint32_t BufferDeviceAddressPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
                                                      const InstructionMeta& meta) {
@@ -42,34 +72,77 @@ uint32_t BufferDeviceAddressPass::CreateFunctionCall(BasicBlock& block, Instruct
 
     // Convert reference pointer to uint64
     const Type& uint64_type = module_.type_manager_.GetTypeInt(64, 0);
-    const uint32_t convert_id = module_.TakeNextId();
-    block.CreateInstruction(spv::OpConvertPtrToU, {uint64_type.Id(), convert_id, pointer_id}, inst_it);
+    const uint32_t addr_id = module_.TakeNextId();
+    block.CreateInstruction(spv::OpConvertPtrToU, {uint64_type.Id(), addr_id, pointer_id}, inst_it);
 
-    const Constant& length_constant = module_.type_manager_.GetConstantUInt32(meta.type_length);
-    const uint32_t opcode = meta.target_instruction->Opcode();
+    uint32_t function_result = 0;
 
-    uint32_t access_type_value = 0;
-    if (opcode == spv::OpStore) {
-        access_type_value |= 1 << glsl::kInstBuffAddrAccessPayloadShiftIsWrite;
+    {
+        function_result = module_.TakeNextId();
+        const uint32_t function_def = GetLinkFunctionIdAlignmentCheck();
+        const uint32_t void_type = module_.type_manager_.GetTypeVoid().Id();
+        const Constant& alignment_constant = module_.type_manager_.GetConstantUInt32(meta.alignment_literal);
+
+        block.CreateInstruction(
+            spv::OpFunctionCall,
+            {void_type, function_result, function_def, addr_id, alignment_constant.Id(), injection_data.inst_position_id}, inst_it);
+        function_alignment_checks_++;
     }
-    if (meta.type_is_struct) {
-        access_type_value |= 1 << glsl::kInstBuffAddrAccessPayloadShiftIsStruct;
+
+    {
+        const Constant& length_constant = module_.type_manager_.GetConstantUInt32(meta.type_length);
+        const uint32_t opcode = meta.target_instruction->Opcode();
+
+        uint32_t access_type_value = 0;
+        if (opcode == spv::OpStore) {
+            access_type_value |= 1 << glsl::kInstBuffAddrAccessPayloadShiftIsWrite;
+        }
+        if (meta.type_is_struct) {
+            access_type_value |= 1 << glsl::kInstBuffAddrAccessPayloadShiftIsStruct;
+        }
+        const Constant& access_type = module_.type_manager_.GetConstantUInt32(access_type_value);
+
+        function_result = module_.TakeNextId();
+        const uint32_t function_def = GetLinkFunctionId();
+        const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
+
+        block.CreateInstruction(spv::OpFunctionCall,
+                                {bool_type, function_result, function_def, injection_data.inst_position_id,
+                                 injection_data.stage_info_id, addr_id, length_constant.Id(), access_type.Id()},
+                                inst_it);
     }
-    const Constant& access_type = module_.type_manager_.GetConstantUInt32(access_type_value);
-
-    const Constant& alignment_constant = module_.type_manager_.GetConstantUInt32(meta.alignment_literal);
-
-    const uint32_t function_result = module_.TakeNextId();
-    const uint32_t function_def = GetLinkFunctionId();
-    const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
-
-    block.CreateInstruction(
-        spv::OpFunctionCall,
-        {bool_type, function_result, function_def, injection_data.inst_position_id, injection_data.stage_info_id, convert_id,
-         length_constant.Id(), access_type.Id(), alignment_constant.Id()},
-        inst_it);
 
     return function_result;
+}
+
+void BufferDeviceAddressPass::ClearPrivateVariable(BasicBlock& block, InstructionIt* inst_it) {
+    // First time we clear, we add the variable
+    // TODO - Find out if we leave in if there are no instructions instrumented (Does CI or traces break?)
+    if (invalid_alignment_priavte_variable_id_ == 0) {
+        invalid_alignment_priavte_variable_id_ = module_.TakeNextId();
+        const Type& uint32_type = module_.type_manager_.GetTypeInt(32, false);
+        const Type& uvec4_type = module_.type_manager_.GetTypeVector(uint32_type, 4);
+        const Type& pointer_type = module_.type_manager_.GetTypePointer(spv::StorageClassPrivate, uvec4_type);
+        auto new_inst = std::make_unique<Instruction>(4, spv::OpVariable);
+        new_inst->Fill({pointer_type.Id(), invalid_alignment_priavte_variable_id_, spv::StorageClassPrivate});
+        module_.type_manager_.AddVariable(std::move(new_inst), pointer_type);
+    }
+
+    const uint32_t uvec4_zero_id = module_.type_manager_.GetConstantZeroUvec4().Id();
+    block.CreateInstruction(spv::OpStore, {invalid_alignment_priavte_variable_id_, uvec4_zero_id}, inst_it);
+
+    // Reset here instead at report time (because functions can have multiple returnZ)
+    function_alignment_checks_ = 0;
+}
+
+void BufferDeviceAddressPass::CreateFunctionCallAlignmentReport(BasicBlock& block, InstructionIt* inst_it) {
+    if (function_alignment_checks_ == 0) return;
+
+    uint32_t function_result = module_.TakeNextId();
+    const uint32_t function_def = GetLinkFunctionIdAlignmentReport();
+    const uint32_t void_type = module_.type_manager_.GetTypeVoid().Id();
+    // TODO - Add in the Stage Info
+    block.CreateInstruction(spv::OpFunctionCall, {void_type, function_result, function_def}, inst_it);
 }
 
 bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta) {
@@ -138,6 +211,11 @@ bool BufferDeviceAddressPass::Instrument() {
     // Can safely loop function list as there is no injecting of new Functions until linking time
     for (const auto& function : module_.functions_) {
         if (function->instrumentation_added_) continue;
+
+        BasicBlock& first_block = function->GetFirstBlock();
+        InstructionIt first_injectable_instruction = first_block.GetFirstInjectableInstrution();
+        ClearPrivateVariable(first_block, &first_injectable_instruction);
+
         for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
 
@@ -152,7 +230,12 @@ bool BufferDeviceAddressPass::Instrument() {
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                 InstructionMeta meta;
                 // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) continue;
+                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) {
+                    if (function->IsReturn(*(inst_it->get()))) {
+                        CreateFunctionCallAlignmentReport(current_block, &inst_it);
+                    }
+                    continue;
+                }
 
                 if (IsMaxInstrumentationsCount()) continue;
                 instrumentations_count_++;
