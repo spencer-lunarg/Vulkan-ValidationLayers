@@ -50,6 +50,8 @@ class BufferDeviceAddressPass : public Pass {
     // Called when a Function ends
     void CreateFunctionCallAlignmentReport(BasicBlock& block, InstructionIt* inst_it);
 
+    uint32_t FindLastByteOffset(uint32_t bda_struct_id, const std::vector<const Instruction*>& access_chain_insts) const;
+
     uint32_t GetLinkFunctionId();
     uint32_t GetLinkFunctionIdAlignmentCheck();
     uint32_t GetLinkFunctionIdAlignmentReport();

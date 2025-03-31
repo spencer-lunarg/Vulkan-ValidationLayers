@@ -147,6 +147,116 @@ void BufferDeviceAddressPass::CreateFunctionCallAlignmentReport(BasicBlock& bloc
     block.CreateInstruction(spv::OpFunctionCall, {void_type, function_result, function_def}, inst_it);
 }
 
+uint32_t BufferDeviceAddressPass::FindLastByteOffset(uint32_t bda_struct_id,
+                                                     const std::vector<const Instruction*>& access_chain_insts) const {
+    assert(!access_chain_insts.empty());
+    uint32_t last_byte_offset = 0;
+    const uint32_t reset_ac_word = 4;  // points to first "Index" operand of an OpAccessChain
+    uint32_t ac_word_index = reset_ac_word;
+
+    uint32_t matrix_stride = 0;
+    bool col_major = false;
+    bool in_matrix = false;
+
+    auto access_chain_iter = access_chain_insts.rbegin();
+
+    uint32_t current_type_id = bda_struct_id;
+    // Walk down access chains to build up the offset
+    while (access_chain_iter != access_chain_insts.rend()) {
+        const uint32_t ac_index_id = (*access_chain_iter)->Word(ac_word_index);
+        const Constant* index_constant = module_.type_manager_.FindConstantById(ac_index_id);
+        if (!index_constant || index_constant->inst_.Opcode() != spv::OpConstant) {
+            return 0;  // Access Chain has dynamic value
+        }
+        const uint32_t constant_value = index_constant->GetValueUint32();
+
+        uint32_t current_offset = 0;
+
+        const Type* current_type = module_.type_manager_.FindTypeById(current_type_id);
+        switch (current_type->spv_type_) {
+            case SpvType::kArray:
+            case SpvType::kRuntimeArray: {
+                // Get array stride and multiply by current index
+                const uint32_t array_stride = GetDecoration(current_type_id, spv::DecorationArrayStride)->Word(3);
+                current_offset = constant_value * array_stride;
+
+                current_type_id = current_type->inst_.Operand(0);  // Get element type for next step
+            } break;
+            case SpvType::kMatrix: {
+                if (matrix_stride == 0) {
+                    module_.InternalError(Name(), "FindLastByteOffset is missing matrix stride");
+                }
+                in_matrix = true;
+                uint32_t vec_type_id = current_type->inst_.Operand(0);
+
+                // If column major, multiply column index by matrix stride, otherwise by vector component size and save matrix
+                // stride for vector (row) index
+                uint32_t col_stride = 0;
+                if (col_major) {
+                    col_stride = matrix_stride;
+                } else {
+                    const uint32_t component_type_id = module_.type_manager_.FindTypeById(vec_type_id)->inst_.Operand(0);
+                    col_stride = FindTypeByteSize(component_type_id);
+                }
+
+                current_offset = constant_value * col_stride;
+
+                current_type_id = vec_type_id;  // Get element type for next step
+            } break;
+            case SpvType::kVector: {
+                // If inside a row major matrix type, multiply index by matrix stride,
+                // else multiply by component size
+                const uint32_t component_type_id = current_type->inst_.Operand(0);
+
+                if (in_matrix && !col_major) {
+                    current_offset = constant_value * matrix_stride;
+                } else {
+                    const uint32_t component_type_size = FindTypeByteSize(component_type_id);
+                    current_offset = constant_value * component_type_size;
+                }
+
+                current_type_id = component_type_id;  // Get element type for next step
+            } break;
+            case SpvType::kStruct: {
+                // Get buffer byte offset for the referenced member
+                current_offset = GetMemberDecoration(current_type_id, constant_value, spv::DecorationOffset)->Word(4);
+
+                // Look for matrix stride for this member if there is one. The matrix
+                // stride is not on the matrix type, but in a OpMemberDecorate on the
+                // enclosing struct type at the member index. If none is found, reset
+                // stride to 0.
+                const Instruction* decoration_matrix_stride =
+                    GetMemberDecoration(current_type_id, constant_value, spv::DecorationMatrixStride);
+                matrix_stride = decoration_matrix_stride ? decoration_matrix_stride->Word(4) : 0;
+
+                const Instruction* decoration_col_major =
+                    GetMemberDecoration(current_type_id, constant_value, spv::DecorationColMajor);
+                col_major = decoration_col_major != nullptr;
+
+                current_type_id = current_type->inst_.Operand(constant_value);  // Get element type for next step
+            } break;
+            default: {
+                module_.InternalError(Name(), "FindLastByteOffset has unexpected non-composite type");
+            } break;
+        }
+
+        last_byte_offset += current_offset;
+
+        ac_word_index++;
+        if (ac_word_index >= (*access_chain_iter)->Length()) {
+            ++access_chain_iter;
+            ac_word_index = reset_ac_word;
+        }
+    }
+
+    // Add in offset of last byte of referenced object
+    const uint32_t accessed_type_size = FindTypeByteSize(current_type_id, matrix_stride, col_major, in_matrix);
+    const uint32_t last_byte_index = accessed_type_size - 1;
+    last_byte_offset += last_byte_index;
+
+    return last_byte_offset;
+}
+
 bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, const Instruction& inst, InstructionMeta& meta,
                                                       bool pre_pass) {
     const uint32_t opcode = inst.Opcode();
@@ -208,26 +318,27 @@ bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, 
 
     // opaccesschain -> OpLoad/OpBitcast -> OpTypePointer (PSB) -> OpTypeStruct
     if (pre_pass && pointer_inst->IsAccessChain()) {
-        const Instruction* access_chain_inst = nullptr;
+        std::vector<const Instruction*> access_chain_insts;
+
         const Instruction* next_inst = pointer_inst;
         // First walk back to the outer most access chain
         while (next_inst && next_inst->IsAccessChain()) {
-            access_chain_inst = next_inst;
+            access_chain_insts.push_back(next_inst);
             const uint32_t access_chain_base_id = next_inst->Operand(0);
             next_inst = function.FindInstruction(access_chain_base_id);
         }
-        if (access_chain_inst && access_chain_inst->IsAccessChain() && next_inst) {
+        if (!access_chain_insts.empty() && next_inst) {
             const Type* load_type_pointer = module_.type_manager_.FindTypeById(next_inst->TypeId());
             if (load_type_pointer && load_type_pointer->spv_type_ == SpvType::kPointer &&
                 load_type_pointer->inst_.StorageClass() == spv::StorageClassPhysicalStorageBuffer) {
                 const Type* struct_type = module_.type_manager_.FindTypeById(load_type_pointer->inst_.Operand(1));
                 if (struct_type && struct_type->spv_type_ == SpvType::kStruct) {
-                    const Constant* struct_index_constant = module_.type_manager_.FindConstantById(access_chain_inst->Operand(1));
-                    if (struct_index_constant) {
-                        const uint32_t struct_index = struct_index_constant->GetValueUint32();
+                    const uint32_t struct_offset = FindLastByteOffset(struct_type->Id(), access_chain_insts);
+                    // printf("struct_offset = %u\n", struct_offset);
+                    if (struct_offset != 0) {
                         Range& range = block_struct_range_map_[struct_type->Id()];
-                        range.begin = std::min(range.begin, struct_index);
-                        range.end = std::max(range.end, struct_index);
+                        range.begin = std::min(range.begin, struct_offset);
+                        range.end = std::max(range.end, struct_offset);
                         range.instructions.insert(inst.GetPositionIndex());
                         block_skip_list_.insert(inst.GetPositionIndex());
                     }

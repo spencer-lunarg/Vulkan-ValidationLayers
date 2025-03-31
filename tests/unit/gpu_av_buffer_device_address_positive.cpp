@@ -2475,3 +2475,90 @@ TEST_F(PositiveGpuAVBufferDeviceAddress, DualShaderLibrary) {
     vkt::Pipeline exe_pipe(*m_device, exe_pipe_ci);
     ASSERT_TRUE(exe_pipe.initialized());
 }
+
+TEST_F(PositiveGpuAVBufferDeviceAddress, x) {
+    RETURN_IF_SKIP(InitGpuVUBufferDeviceAddress());
+
+    char const *shader_source = R"glsl(
+        #version 450
+        #extension GL_EXT_buffer_reference : enable
+
+        layout(buffer_reference) buffer BDA {
+            vec3 x;
+            vec3 payload[64];
+            vec3 z;
+            vec3 w;
+        };
+
+        layout(push_constant) uniform Uniforms {
+            BDA ptr;
+            uint index;
+        };
+
+        void main() {
+            vec3 a = vec3(0);
+            a += fma(vec3(ptr.payload[0].x, ptr.payload[0].y, ptr.payload[0].z),
+                        vec3(ptr.payload[1].x, ptr.payload[1].y, ptr.payload[1].z),
+                        vec3(ptr.payload[2].x, ptr.payload[2].y, ptr.payload[2].z));
+
+            a += vec3(ptr.payload[index].x, ptr.payload[index + 1].y, ptr.payload[index * index].z);
+            a += ptr.z;
+
+            ptr.x = a;
+        }
+    )glsl";
+    VkPushConstantRange pc_range = {VK_SHADER_STAGE_COMPUTE_BIT, 0, 16};
+    const vkt::PipelineLayout pipeline_layout(*m_device, {}, {pc_range});
+
+    CreateComputePipelineHelper pipe(*this);
+    pipe.cp_ci_.layout = pipeline_layout;
+    pipe.cs_ = std::make_unique<VkShaderObj>(this, shader_source, VK_SHADER_STAGE_COMPUTE_BIT);
+    pipe.CreateComputePipeline();
+}
+
+TEST_F(PositiveGpuAVBufferDeviceAddress, y) {
+    RETURN_IF_SKIP(InitGpuVUBufferDeviceAddress());
+
+    char const *shader_source = R"glsl(
+        #version 450
+        #extension GL_EXT_buffer_reference : enable
+
+        layout(buffer_reference) buffer BDA1 {
+            vec3 payload[4096];
+        };
+
+        layout(buffer_reference) buffer BDA2 {
+            vec3 payload[4096];
+        };
+
+        layout(buffer_reference) buffer BDA3 {
+            vec3 payload[4096];
+        };
+
+        layout(push_constant) uniform Uniforms {
+            BDA1 ptr1;
+            BDA2 ptr2;
+            BDA3 ptr3;
+            uint index;
+        };
+
+        void main() {
+            vec3 a = vec3(0);
+            a += fma(vec3(ptr1.payload[0].x, ptr2.payload[0].y, ptr3.payload[0].z),
+                        vec3(ptr1.payload[1].x, ptr2.payload[1].y, ptr3.payload[1].z),
+                        vec3(ptr1.payload[2].x, ptr2.payload[2].y, ptr3.payload[2].z));
+
+            a += vec3(ptr3.payload[index].x, ptr3.payload[index + 1].y, ptr3.payload[index * index].z);
+            a += ptr1.payload[3000];
+
+            ptr2.payload[4000] = a;
+        }
+    )glsl";
+    VkPushConstantRange pc_range = {VK_SHADER_STAGE_COMPUTE_BIT, 0, 64};
+    const vkt::PipelineLayout pipeline_layout(*m_device, {}, {pc_range});
+
+    CreateComputePipelineHelper pipe(*this);
+    pipe.cp_ci_.layout = pipeline_layout;
+    pipe.cs_ = std::make_unique<VkShaderObj>(this, shader_source, VK_SHADER_STAGE_COMPUTE_BIT);
+    pipe.CreateComputePipeline();
+}
