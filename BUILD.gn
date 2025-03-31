@@ -410,6 +410,8 @@ vvl_sources = [
   "layers/vulkan/generated/instrumentation_descriptor_class_texel_buffer_comp.h",
   "layers/vulkan/generated/instrumentation_buffer_device_address_comp.cpp",
   "layers/vulkan/generated/instrumentation_buffer_device_address_comp.h",
+  "layers/vulkan/generated/instrumentation_buffer_device_address_alignment_full_range_comp.cpp",
+  "layers/vulkan/generated/instrumentation_buffer_device_address_alignment_full_range_comp.h",
   "layers/vulkan/generated/instrumentation_buffer_device_address_alignment_check_comp.cpp",
   "layers/vulkan/generated/instrumentation_buffer_device_address_alignment_check_comp.h",
   "layers/vulkan/generated/instrumentation_buffer_device_address_alignment_report_comp.cpp",

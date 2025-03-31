@@ -53,6 +53,7 @@ class BufferDeviceAddressPass : public Pass {
     uint32_t FindLastByteOffset(uint32_t bda_struct_id, const std::vector<const Instruction*>& access_chain_insts) const;
 
     uint32_t GetLinkFunctionId();
+    uint32_t GetLinkFunctionIdFullRange();
     uint32_t GetLinkFunctionIdAlignmentCheck();
     uint32_t GetLinkFunctionIdAlignmentReport();
 
@@ -61,15 +62,14 @@ class BufferDeviceAddressPass : public Pass {
 
     // Function IDs to link in
     uint32_t link_function_id_ = 0;
+    uint32_t link_full_range_id_ = 0;
     uint32_t link_alignment_check_id_ = 0;
     uint32_t link_alignment_report_id_ = 0;
 
     struct Range {
         uint32_t begin = vvl::kU32Max;
-        uint32_t begin_instruction = 0;
         uint32_t end = 0;
-        uint32_t end_instruction = 0;
-        vvl::unordered_set<uint32_t> instructions;
+        uint32_t first_instruction = 0;
     };
 
     vvl::unordered_map<uint32_t, Range> block_struct_range_map_;

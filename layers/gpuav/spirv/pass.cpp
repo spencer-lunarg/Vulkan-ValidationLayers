@@ -243,8 +243,8 @@ InjectionData Pass::GetInjectionData(Function& function, const BasicBlock& targe
     // Add any debug information to pass into the function call
     InjectionData injection_data;
     injection_data.stage_info_id = GetStageInfo(function, target_block_it, out_inst_it);
-    const uint32_t inst_position = target_instruction.GetPositionIndex();
-    auto inst_position_constant = module_.type_manager_.CreateConstantUInt32(inst_position);
+    injection_data.inst_position = target_instruction.GetPositionIndex();
+    auto inst_position_constant = module_.type_manager_.CreateConstantUInt32(injection_data.inst_position);
     injection_data.inst_position_id = inst_position_constant.Id();
     return injection_data;
 }

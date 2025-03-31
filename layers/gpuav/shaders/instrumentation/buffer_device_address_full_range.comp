@@ -1,0 +1,100 @@
+// Copyright (c) 2024-2025 The Khronos Group Inc.
+// Copyright (c) 2024-2025 Valve Corporation
+// Copyright (c) 2024-2025 LunarG, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// NOTE: This file doesn't contain any entrypoints and should be compiled with the --no-link option for glslang
+
+#version 450
+#extension GL_GOOGLE_include_directive : enable
+#include "common_descriptor_sets.h"
+
+// Represent a [begin, end) range, where end is one past the last element held in range
+struct Range {
+    uint64_t begin;
+    uint64_t end;
+};
+
+// See gpuav::CommandBuffer::UpdateBdaRangesBuffer for a description of the table format
+// Ranges are supposed to:
+// 1) be stored from low to high
+// 2) not overlap
+layout(set = kInstDefaultDescriptorSet, binding = kBindingInstBufferDeviceAddress, std430) buffer BuffAddrInputBuffer {
+    uint bda_range_count;
+    uint padding_unused;
+    Range bda_ranges[];
+};
+
+void inst_buffer_device_address_full_range(
+    const uint inst_num,
+    const uvec4 stage_info,
+    const uint64_t addr,
+    const uint access_byte_start,
+    const uint access_byte_end)
+{
+    {
+        // Find out if addr is valid
+        // ---
+        for (uint range_i = 0; range_i < bda_range_count; ++range_i) {
+            const Range range = bda_ranges[range_i];
+            uint64_t start_range = addr + access_byte_start;
+            uint64_t end_range = addr + access_byte_end;
+            if (start_range < range.begin) {
+                // Invalid address, proceed to error logging
+                break;
+            }
+            if ((start_range < range.end) && (end_range > range.end)) {
+                // Ranges do not overlap,
+                // so if current range holds addr but not (add + access_byte_size), access is invalid
+                break;
+            }
+            if ((end_range) <= range.end) {
+                // addr >= range.begin && addr + access_byte_end <= range.end
+                // ==> valid access
+                return;
+            }
+            // Address is above current range, proceed to next range.
+            // If at loop end, address is invalid.
+        }
+    }
+
+    // addr is invalid, try to print error
+    // ---
+    const uint cmd_id = inst_cmd_resource_index_buffer.index[0];
+    const uint cmd_errors_count = atomicAdd(inst_cmd_errors_count_buffer.errors_count[cmd_id], 1);
+    const bool max_cmd_errors_count_reached = cmd_errors_count >= kMaxErrorsPerCmd;
+
+    if (max_cmd_errors_count_reached) return;
+
+    uint write_pos = atomicAdd(inst_errors_buffer.written_count, kErrorRecordSize);
+    const bool errors_buffer_not_filled = (write_pos + kErrorRecordSize) <= uint(inst_errors_buffer.data.length());
+
+    if (errors_buffer_not_filled) {
+        inst_errors_buffer.data[write_pos + kHeaderErrorRecordSizeOffset] = kErrorRecordSize;
+        inst_errors_buffer.data[write_pos + kHeaderShaderIdErrorOffset] = SpecConstantLinkShaderId | (kErrorGroupInstBufferDeviceAddress << kErrorGroupShift) | (kErrorSubCodeBufferDeviceAddressFullRange << kErrorSubCodeShift);
+        inst_errors_buffer.data[write_pos + kHeaderStageInstructionIdOffset] = inst_num | (stage_info.x << kStageIdShift);
+        inst_errors_buffer.data[write_pos + kHeaderStageInfoOffset_0] = stage_info.y;
+        inst_errors_buffer.data[write_pos + kHeaderStageInfoOffset_1] = stage_info.z;
+        inst_errors_buffer.data[write_pos + kHeaderStageInfoOffset_2] = stage_info.w;
+
+        inst_errors_buffer.data[write_pos + kHeaderActionIdOffset] = (inst_action_index_buffer.index[0] << kActionIdShift) | inst_cmd_resource_index_buffer.index[0];
+
+        inst_errors_buffer.data[write_pos + kInstBuffAddrUnallocDescPtrLoOffset] = uint(addr);
+        inst_errors_buffer.data[write_pos + kInstBuffAddrUnallocDescPtrHiOffset] = uint(addr >> 32u);
+
+        inst_errors_buffer.data[write_pos + kInstBuffAddrAccessPayloadOffset] = (access_byte_start << 16) | access_byte_end;
+    }
+
+    return;
+}

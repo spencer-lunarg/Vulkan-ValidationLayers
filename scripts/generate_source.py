@@ -430,6 +430,8 @@ def main(argv):
         'validation_cmd_trace_rays_rgen.cpp',
         'instrumentation_buffer_device_address_comp.h',
         'instrumentation_buffer_device_address_comp.cpp',
+        'instrumentation_buffer_device_address_full_range_comp.h',
+        'instrumentation_buffer_device_address_full_range_comp.cpp',
         'instrumentation_buffer_device_address_alignment_check_comp.h',
         'instrumentation_buffer_device_address_alignment_check_comp.cpp',
         'instrumentation_buffer_device_address_alignment_report_comp.h',

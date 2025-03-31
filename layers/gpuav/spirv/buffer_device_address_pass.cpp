@@ -24,6 +24,7 @@
 #include "gpuav/shaders/gpuav_error_header.h"
 
 #include "generated/instrumentation_buffer_device_address_comp.h"
+#include "generated/instrumentation_buffer_device_address_full_range_comp.h"
 #include "generated/instrumentation_buffer_device_address_alignment_check_comp.h"
 #include "generated/instrumentation_buffer_device_address_alignment_report_comp.h"
 
@@ -34,6 +35,9 @@ const static OfflineLinkInfo link_info = {instrumentation_buffer_device_address_
                                           instrumentation_buffer_device_address_comp_size, "inst_buffer_device_address",
                                           ZeroInitializeUintPrivateVariables};
 
+const static OfflineLinkInfo link_info_full_range = {instrumentation_buffer_device_address_full_range_comp,
+                                                     instrumentation_buffer_device_address_full_range_comp_size,
+                                                     "inst_buffer_device_address_full_range", 0};
 const static OfflineLinkInfo link_info_check = {instrumentation_buffer_device_address_alignment_check_comp,
                                                   instrumentation_buffer_device_address_alignment_check_comp_size,
                                                   "inst_buffer_device_address_alignment_check", SwapPrivateVariable};
@@ -45,6 +49,14 @@ BufferDeviceAddressPass::BufferDeviceAddressPass(Module& module) : Pass(module) 
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
 uint32_t BufferDeviceAddressPass::GetLinkFunctionId() { return module_.GetLinkFunction(link_function_id_, link_info); }
+
+uint32_t BufferDeviceAddressPass::GetLinkFunctionIdFullRange() {
+    if (link_full_range_id_ == 0) {
+        link_full_range_id_ = module_.TakeNextId();
+        module_.link_info_.emplace_back(LinkInfo{link_info_full_range, link_full_range_id_});
+    }
+    return link_full_range_id_;
+}
 
 uint32_t BufferDeviceAddressPass::GetLinkFunctionIdAlignmentCheck() {
     if (link_alignment_check_id_ == 0) {
@@ -91,7 +103,7 @@ uint32_t BufferDeviceAddressPass::CreateFunctionCall(BasicBlock& block, Instruct
         function_alignment_checks_++;
     }
 
-    {
+    if (!block_skip_list_.contains(injection_data.inst_position)) {
         const Constant& length_constant = module_.type_manager_.GetConstantUInt32(meta.type_length);
         const uint32_t opcode = meta.target_instruction->Opcode();
 
@@ -112,6 +124,24 @@ uint32_t BufferDeviceAddressPass::CreateFunctionCall(BasicBlock& block, Instruct
                                 {bool_type, function_result, function_def, injection_data.inst_position_id,
                                  injection_data.stage_info_id, addr_id, length_constant.Id(), access_type.Id()},
                                 inst_it);
+
+    } else {
+        for (const auto& [struct_id, range] : block_struct_range_map_) {
+            if (range.first_instruction != injection_data.inst_position) continue;
+
+            function_result = module_.TakeNextId();
+            const uint32_t function_def = GetLinkFunctionIdFullRange();
+            const uint32_t void_type = module_.type_manager_.GetTypeVoid().Id();
+            const Constant& start_range = module_.type_manager_.GetConstantUInt32(range.begin);
+            const Constant& end_range = module_.type_manager_.GetConstantUInt32(range.end);
+
+            block.CreateInstruction(spv::OpFunctionCall,
+                                    {void_type, function_result, function_def, injection_data.inst_position_id,
+                                     injection_data.stage_info_id, addr_id, start_range.Id(), end_range.Id()},
+                                    inst_it);
+
+            break;
+        }
     }
 
     return function_result;
@@ -334,13 +364,15 @@ bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, 
                 const Type* struct_type = module_.type_manager_.FindTypeById(load_type_pointer->inst_.Operand(1));
                 if (struct_type && struct_type->spv_type_ == SpvType::kStruct) {
                     const uint32_t struct_offset = FindLastByteOffset(struct_type->Id(), access_chain_insts);
-                    // printf("struct_offset = %u\n", struct_offset);
                     if (struct_offset != 0) {
                         Range& range = block_struct_range_map_[struct_type->Id()];
                         range.begin = std::min(range.begin, struct_offset);
                         range.end = std::max(range.end, struct_offset);
-                        range.instructions.insert(inst.GetPositionIndex());
-                        block_skip_list_.insert(inst.GetPositionIndex());
+                        uint32_t inst_position = inst.GetPositionIndex();
+                        if (range.first_instruction == 0) {
+                            range.first_instruction = inst_position;
+                        }
+                        block_skip_list_.insert(inst_position);
                     }
                 }
             }
@@ -376,11 +408,7 @@ bool BufferDeviceAddressPass::Instrument() {
 
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                 InstructionMeta meta;
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta, true)) continue;
-            }
-            printf("---[ %u ] skip %zu ---\n", module_.settings_.shader_id, block_skip_list_.size());
-            for (const auto& [struct_id, range] : block_struct_range_map_) {
-                printf("\t[%u] | (%zu) | %u - %u\n", struct_id, range.instructions.size(), range.begin, range.end);
+                RequiresInstrumentation(*function, *(inst_it->get()), meta, true);
             }
 
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {

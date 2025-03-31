@@ -77,6 +77,7 @@ const int kErrorSubCodeDescriptorClassTexelBufferBounds = 2;
 //
 const int kErrorSubCodeBufferDeviceAddressUnallocRef = 1;
 const int kErrorSubCodeBufferDeviceAddressAlignment = 2;
+const int kErrorSubCodeBufferDeviceAddressFullRange = 3;
 
 // Ray Query
 //

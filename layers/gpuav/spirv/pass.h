@@ -29,6 +29,7 @@ struct Type;
 // Info we know is the same regardless what pass is consuming the CreateFunctionCall()
 struct InjectionData {
     uint32_t stage_info_id;
+    uint32_t inst_position;
     uint32_t inst_position_id;
 };
 
