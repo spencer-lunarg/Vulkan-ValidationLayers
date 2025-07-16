@@ -228,7 +228,9 @@ bool Device::PreCallValidateCreateFramebuffer(VkDevice device, const VkFramebuff
                                               const VkAllocationCallbacks* pAllocator, VkFramebuffer* pFramebuffer,
                                               const ErrorObject& error_obj) const {
     static bool reported = false;
+    printf("#### PreCallValidateCreateFramebuffer reported = %d\n", reported);
     if (reported) return false;
+    printf("#### PreCallValidateCreateFramebuffer value %d | %d\n", api_version >= VK_API_VERSION_1_4, supported_vk_khr_dynamic_rendering_local_read);
 
     if (api_version >= VK_API_VERSION_1_4) {
         reported = true;
@@ -250,7 +252,9 @@ bool Device::PreCallValidateCreateRenderPass(VkDevice device, const VkRenderPass
                                              const VkAllocationCallbacks* pAllocator, VkRenderPass* pRenderPass,
                                              const ErrorObject& error_obj) const {
     static bool reported = false;
+    printf("#### PreCallValidateCreateRenderPass reported = %d\n", reported);
     if (reported) return false;
+    printf("#### PreCallValidateCreateRenderPass value %d | %d\n", api_version >= VK_API_VERSION_1_2, supported_vk_khr_create_renderpass2);
 
     if (api_version >= VK_API_VERSION_1_2) {
         reported = true;
@@ -292,7 +296,9 @@ bool Device::PreCallValidateGetRenderAreaGranularity(VkDevice device, VkRenderPa
 bool Device::PreCallValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                                VkSubpassContents contents, const ErrorObject& error_obj) const {
     static bool reported = false;
+    printf("#### PreCallValidateCmdBeginRenderPass reported = %d\n", reported);
     if (reported) return false;
+    printf("#### PreCallValidateCmdBeginRenderPass value %d | %d\n", api_version >= VK_API_VERSION_1_2, supported_vk_khr_create_renderpass2);
 
     if (api_version >= VK_API_VERSION_1_2) {
         reported = true;
@@ -313,7 +319,9 @@ bool Device::PreCallValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, co
 bool Device::PreCallValidateCmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents,
                                            const ErrorObject& error_obj) const {
     static bool reported = false;
+    printf("#### PreCallValidateCmdNextSubpass reported = %d\n", reported);
     if (reported) return false;
+    printf("#### PreCallValidateCmdNextSubpass value %d | %d\n", api_version >= VK_API_VERSION_1_2, supported_vk_khr_create_renderpass2);
 
     if (api_version >= VK_API_VERSION_1_2) {
         reported = true;
@@ -333,8 +341,10 @@ bool Device::PreCallValidateCmdNextSubpass(VkCommandBuffer commandBuffer, VkSubp
 
 bool Device::PreCallValidateCmdEndRenderPass(VkCommandBuffer commandBuffer, const ErrorObject& error_obj) const {
     static bool reported = false;
+    printf("#### PreCallValidateCmdEndRenderPass reported = %d\n", reported);
     if (reported) return false;
 
+    printf("#### PreCallValidateCmdEndRenderPass value %d | %d\n", api_version >= VK_API_VERSION_1_2, supported_vk_khr_create_renderpass2);
     if (api_version >= VK_API_VERSION_1_2) {
         reported = true;
         LogWarning(

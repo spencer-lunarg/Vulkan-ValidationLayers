@@ -185,26 +185,28 @@ def RunVVLTests(args):
 
     lvt_cmd = os.path.join(CI_INSTALL_DIR, 'bin', 'vk_layer_validation_tests')
 
-    if args.mockAndroid:
-        # TODO - only reason running this subset, is mockAndoid fails any test that does
-        # a manual vkCreateDevice call and need to investigate more why
-        common_ci.RunShellCmd(lvt_cmd + " --gtest_filter=*AndroidHardwareBuffer.*:*AndroidExternalResolve.*", env=lvt_env)
-        return
-    if args.tsan and args.wsi:
-        # Combo of both below
-        common_ci.RunShellCmd(f'xvfb-run --auto-servernum {lvt_cmd} --gtest_filter=*Wsi.*', env=lvt_env)
-        return
-    if args.tsan:
-        # These are tests we have decided are worth using Thread Sanitize as it will take about 9x longer to run a test
-        # We have also seen TSAN turn bug out and make each test incrementally take longer
-        # (https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/8931)
-        common_ci.RunShellCmd(lvt_cmd + " --gtest_filter=*SyncVal.*:*Threading.*:*SyncObject.*:-*Video*", env=lvt_env)
-        return
-    if args.wsi:
-        # We need to use xvfb to get github action runners to be able to create a surface context
-        # Adding to other tests is a slow, unnecessary, overheader
-        common_ci.RunShellCmd(f'xvfb-run --auto-servernum {lvt_cmd} --gtest_filter=*Wsi.*', env=lvt_env)
-        return
+
+    common_ci.RunShellCmd(lvt_cmd + " --gtest_filter=*Deprecation.*", env=lvt_env)
+    # if args.mockAndroid:
+    #     # TODO - only reason running this subset, is mockAndoid fails any test that does
+    #     # a manual vkCreateDevice call and need to investigate more why
+    #     common_ci.RunShellCmd(lvt_cmd + " --gtest_filter=*AndroidHardwareBuffer.*:*AndroidExternalResolve.*", env=lvt_env)
+    #     return
+    # if args.tsan and args.wsi:
+    #     # Combo of both below
+    #     common_ci.RunShellCmd(f'xvfb-run --auto-servernum {lvt_cmd} --gtest_filter=*Wsi.*', env=lvt_env)
+    #     return
+    # if args.tsan:
+    #     # These are tests we have decided are worth using Thread Sanitize as it will take about 9x longer to run a test
+    #     # We have also seen TSAN turn bug out and make each test incrementally take longer
+    #     # (https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/8931)
+    #     common_ci.RunShellCmd(lvt_cmd + " --gtest_filter=*SyncVal.*:*Threading.*:*SyncObject.*:-*Video*", env=lvt_env)
+    #     return
+    # if args.wsi:
+    #     # We need to use xvfb to get github action runners to be able to create a surface context
+    #     # Adding to other tests is a slow, unnecessary, overheader
+    #     common_ci.RunShellCmd(f'xvfb-run --auto-servernum {lvt_cmd} --gtest_filter=*Wsi.*', env=lvt_env)
+    #     return
 
     # these will 100% be skipped by default on CI machine, save time filtering them out first
     skip_list = [
