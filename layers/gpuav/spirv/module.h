@@ -96,6 +96,9 @@ class Module {
     void LinkFunctions(const LinkInfo& info);
     void PostProcess();
 
+    // Initial check if possible to even instrument, allows for faster early return
+    bool CanInstrument() const;
+
     // The class is designed to be written out to a binary file.
     void ToBinary(std::vector<uint32_t>& out);
 

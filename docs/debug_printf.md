@@ -227,7 +227,8 @@ buffer size.
   * Can be controlled with `VK_LAYER_PRINTF_BUFFER_SIZE`
 * Validation Layers version: `1.2.135.0` or later is required
 * Vulkan API version 1.1 or greater is required
-* When using Validation Layers, the `fragmentStoresAndAtomics`, `vertexPipelineStoresAndAtomics`, and `timelineSemaphore` features are required
+* The `fragmentStoresAndAtomics` and `vertexPipelineStoresAndAtomics` features are required to use those stages.
+  * Other features may also be required, but normally are those that have almost complete adoption.
 * The `VK_KHR_shader_non_semantic_info` extension must be supported and enabled
   * If using the Validation Layers, we attempt to strip it out to allow wider range of users to still use Debug Printf
 * RenderDoc release 1.14 or later

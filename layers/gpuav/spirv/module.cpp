@@ -16,6 +16,7 @@
 #include "module.h"
 #include <cassert>
 #include <spirv/unified1/spirv.hpp>
+#include "containers/container_utils.h"
 #include "containers/custom_containers.h"
 #include "generated/spirv_grammar_helper.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
@@ -766,6 +767,19 @@ void Module::PostProcess() {
         // SPV_KHR_storage_buffer_storage_class is needed, but glslang removes it from linking functions
         AddExtension("SPV_KHR_storage_buffer_storage_class");
     }
+}
+
+bool Module::CanInstrument() const {
+    if (!enabled_features_.vertexPipelineStoresAndAtomics) {
+        for (const auto& entry_point_inst : entry_points_) {
+            const auto execution_model = (spv::ExecutionModel)entry_point_inst->Word(1);
+            if (IsValueIn(execution_model, {spv::ExecutionModelVertex, spv::ExecutionModelGeometry,
+                                            spv::ExecutionModelTessellationControl, spv::ExecutionModelTessellationEvaluation})) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void Module::InternalWarning(const char* tag, const std::string& message) {

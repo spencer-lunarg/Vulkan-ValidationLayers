@@ -23,8 +23,8 @@ bool CanEnableGpuAV(Test &test) {
     VkPhysicalDeviceTimelineSemaphoreFeatures supported_timeline_feature = vku::InitStructHelper(&supported_bda_feature);
     VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&supported_timeline_feature);
     test.GetPhysicalDeviceFeatures2(features2);
-    if (!features2.features.fragmentStoresAndAtomics || !features2.features.vertexPipelineStoresAndAtomics) {
-        printf("fragmentStoresAndAtomics and vertexPipelineStoresAndAtomics are required for GPU-AV\n");
+    if (!features2.features.fragmentStoresAndAtomics) {
+        printf("fragmentStoresAndAtomics and required for GPU-AV\n");
         return false;
     } else if (!supported_timeline_feature.timelineSemaphore) {
         printf("timelineSemaphore are required for GPU-AV\n");

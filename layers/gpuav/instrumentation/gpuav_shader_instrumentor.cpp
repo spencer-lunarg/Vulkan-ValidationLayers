@@ -87,10 +87,11 @@ void GpuShaderInstrumentor::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateI
         return;
     }
     if (!modified_features.vertexPipelineStoresAndAtomics) {
-        InternalError(device, loc,
-                      "GPU Shader Instrumentation requires vertexPipelineStoresAndAtomics to allow witting out data inside the "
-                      "vertex shader.");
-        return;
+        // fragmentStoresAndAtomics is 99% supported, but vertexPipelineStoresAndAtomics is only 75% and most notably will not run
+        // on ARM Mali devices, we will just skip those shaders
+        InternalWarning(device, loc,
+                        "GPU Shader Instrumentation requires vertexPipelineStoresAndAtomics to allow witting out data inside the "
+                        "vertex shader, all vertex tessellation, and geometry shader stages will be skipped.");
     }
     if (!modified_features.timelineSemaphore) {
         InternalError(device, loc,
@@ -1270,7 +1271,9 @@ static bool GpuValidateShader(const std::vector<uint32_t> &input, spv_target_env
 bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &input_spirv, uint32_t unique_shader_id,
                                              const InstrumentationDescriptorSetLayouts &instrumentation_dsl, const Location &loc,
                                              std::vector<uint32_t> &out_instrumented_spirv) {
-    if (input_spirv[0] != spv::MagicNumber) return false;
+    if (input_spirv[0] != spv::MagicNumber) {
+        return false;
+    }
 
     if (unique_shader_id >= glsl::kMaxInstrumentedShaders) {
         InternalWarning(device, loc, "kMaxInstrumentedShaders limit has been hit, no shaders can be instrumented.");
@@ -1295,6 +1298,10 @@ bool GpuShaderInstrumentor::InstrumentShader(const vvl::span<const uint32_t> &in
 
     spirv::Module module(input_spirv, debug_report, module_settings, modified_features,
                          instrumentation_dsl.set_index_to_bindings_layout_lut);
+
+    if (!module.CanInstrument()) {
+        return false;
+    }
 
     bool modified = false;
 
