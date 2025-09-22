@@ -1733,16 +1733,6 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkAccessFlags2>& syncDirectSt
 
 const vvl::unordered_map<VkQueueFlagBits, VkPipelineStageFlags2>& syncAllCommandStagesByQueueFlags() {
     static const vvl::unordered_map<VkQueueFlagBits, VkPipelineStageFlags2> variable = {
-    { VK_QUEUE_TRANSFER_BIT, (
-        VK_PIPELINE_STAGE_2_COPY_BIT |
-        VK_PIPELINE_STAGE_2_RESOLVE_BIT |
-        VK_PIPELINE_STAGE_2_BLIT_BIT |
-        VK_PIPELINE_STAGE_2_CLEAR_BIT |
-        VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR |
-        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV |
-        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
-        VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
-    )},
     { VK_QUEUE_GRAPHICS_BIT, (
         VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT |
         VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
@@ -1791,7 +1781,13 @@ const vvl::unordered_map<VkQueueFlagBits, VkPipelineStageFlags2>& syncAllCommand
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
-    { VK_QUEUE_PROTECTED_BIT, (
+    { VK_QUEUE_TRANSFER_BIT, (
+        VK_PIPELINE_STAGE_2_COPY_BIT |
+        VK_PIPELINE_STAGE_2_RESOLVE_BIT |
+        VK_PIPELINE_STAGE_2_BLIT_BIT |
+        VK_PIPELINE_STAGE_2_CLEAR_BIT |
+        VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR |
+        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV |
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
@@ -1799,8 +1795,7 @@ const vvl::unordered_map<VkQueueFlagBits, VkPipelineStageFlags2>& syncAllCommand
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
-    { VK_QUEUE_OPTICAL_FLOW_BIT_NV, (
-        VK_PIPELINE_STAGE_2_OPTICAL_FLOW_BIT_NV |
+    { VK_QUEUE_PROTECTED_BIT, (
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
@@ -1811,6 +1806,11 @@ const vvl::unordered_map<VkQueueFlagBits, VkPipelineStageFlags2>& syncAllCommand
     )},
     { VK_QUEUE_VIDEO_ENCODE_BIT_KHR, (
         VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR |
+        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
+        VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
+    )},
+    { VK_QUEUE_OPTICAL_FLOW_BIT_NV, (
+        VK_PIPELINE_STAGE_2_OPTICAL_FLOW_BIT_NV |
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
