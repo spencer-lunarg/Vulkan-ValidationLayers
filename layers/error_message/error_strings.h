@@ -384,3 +384,11 @@
     }
     return "event was set with " + set.str() + " and is being waited on with " + wait.str();
 }
+
+[[maybe_unused]] static std::string string_VkBindHeapInfoEXT(VkBindHeapInfoEXT info) {
+    std::stringstream ss;
+    ss << "heapRange = { address = " << info.heapRange.address << ", size = " << info.heapRange.size << " }, ";
+    ss << "reservedRangeOffset = " << info.reservedRangeOffset << ", ";
+    ss << "reservedRangeSize = " << info.reservedRangeSize << "";
+    return ss.str();
+}

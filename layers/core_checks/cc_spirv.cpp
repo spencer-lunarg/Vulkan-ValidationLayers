@@ -3,7 +3,7 @@
  * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2026 Google Inc.
  * Copyright (c) 2025 Arm Limited.
- * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Modifications Copyright (C) 2020,2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -145,8 +145,10 @@ bool CoreChecks::ValidatePushConstantUsage(const spirv::Module &module_state, co
     std::string stage_vuid;
     std::string range_vuid;
     if (pipeline) {
+        if (!pipeline->PipelineLayoutState()) {
+            return skip;  // can be null for Descriptor Heaps
+        }
         push_constant_ranges = pipeline->PipelineLayoutState()->push_constant_ranges_layout.get();
-
         switch (pipeline->GetCreateInfoSType()) {
             case VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO:
                 stage_vuid = "VUID-VkGraphicsPipelineCreateInfo-layout-07987";
@@ -169,6 +171,9 @@ bool CoreChecks::ValidatePushConstantUsage(const spirv::Module &module_state, co
                 break;
         }
     } else {
+        if ((stage_state.shader_object_create_info->flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) != 0) {
+            return skip;
+        }
         shader_object_push_constant_ranges_id = GetCanonicalId(stage_state.shader_object_create_info->pushConstantRangeCount,
                                                                stage_state.shader_object_create_info->pPushConstantRanges);
         push_constant_ranges = shader_object_push_constant_ranges_id.get();
@@ -1286,9 +1291,17 @@ bool CoreChecks::ValidateShader64BitIndexing(const spirv::Module &module_state, 
     }
     for (const spirv::Instruction *array_length_inst : module_state.static_data_.array_length_inst) {
         const spirv::Instruction &insn = *array_length_inst;
-        if (check(insn.Word(1))) {
+        if (check(insn.TypeId())) {
             skip |= LogError("VUID-RuntimeSpirv-OpArrayLength-11807", module_state.handle(), loc,
                              "SPIR-V (%s) contains 64-bit array length return type\n%s\n",
+                             string_VkShaderStageFlagBits(entrypoint.stage), module_state.DescribeInstruction(insn).c_str());
+        }
+    }
+    for (const spirv::Instruction *constant_size_of_inst : module_state.static_data_.constant_size_of_inst) {
+        const spirv::Instruction &insn = *constant_size_of_inst;
+        if (check(insn.TypeId())) {
+            skip |= LogError("VUID-RuntimeSpirv-OpConstantSizeOfEXT-11475", module_state.handle(), loc,
+                             "SPIR-V (%s) contains 64-bit OpConstantSizeOfEXT return type\n%s\n",
                              string_VkShaderStageFlagBits(entrypoint.stage), module_state.DescribeInstruction(insn).c_str());
         }
     }
@@ -1620,6 +1633,14 @@ bool CoreChecks::ValidateShaderInterfaceVariableDSL(const spirv::Module& module_
         return skip;
     }
 
+    const bool descriptor_heap_flag =
+        stage_state.HasPipeline() ? stage_state.pipeline_layout == VK_NULL_HANDLE
+                                  : (stage_state.shader_object_create_info->flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) != 0;
+
+    if (descriptor_heap_flag) {
+        return skip;
+    }
+
     LogObjectList objlist(module_state.handle());
 
     const VkDescriptorSetLayoutBinding *binding = nullptr;
@@ -1632,8 +1653,7 @@ bool CoreChecks::ValidateShaderInterfaceVariableDSL(const spirv::Module& module_
 
     auto print_dsl_info = [&stage_state, &variable]() {
         std::ostringstream ss;
-        const bool has_pipeline = stage_state.shader_object_create_info == nullptr;
-        if (has_pipeline) {
+        if (stage_state.HasPipeline()) {
             ss << "VkPipelineLayoutCreateInfo::pSetLayouts[" << variable.decorations.set << "]";
         } else {
             ss << "VkShaderCreateInfoEXT::pSetLayouts[" << variable.decorations.set << "]";
@@ -1647,11 +1667,20 @@ bool CoreChecks::ValidateShaderInterfaceVariableDSL(const spirv::Module& module_
 
     // If no binding nothing left to validate
     if (!binding) {
-        skip |= LogError(GetSpirvInterfaceVariableVUID(loc, vvl::SpirvInterfaceVariableError::ShaderStage_07988), objlist, loc,
+        if (variable.IsHeap()) {
+            skip |= LogError(GetSpirvInterfaceVariableVUID(loc, vvl::SpirvInterfaceVariableError::ShaderStage_07988), objlist, loc,
+                             "SPIR-V (%s) is trying to use descriptor heaps (%s) but is also trying to use a %s, either set the "
+                             "layout to NULL or remove the heaps from the shader.",
+                             string_VkShaderStageFlagBits(variable.stage), variable.DescribeDescriptor().c_str(),
+                             stage_state.HasPipeline() ? "VkPipelineLayout" : "VkDescriptorSetLayout");
+        } else {
+            skip |=
+                LogError(GetSpirvInterfaceVariableVUID(loc, vvl::SpirvInterfaceVariableError::ShaderStage_07988), objlist, loc,
                          "SPIR-V (%s) uses descriptor %s but the binding was not declared in the %s.\nPossible VkDescriptorType "
                          "that could be used are: %s",
                          string_VkShaderStageFlagBits(variable.stage), variable.DescribeDescriptor().c_str(),
                          print_dsl_info().c_str(), resource_type.Describe().c_str());
+        }
         return skip;
     }
 
@@ -2161,6 +2190,9 @@ bool CoreChecks::ValidateShaderStage(const ShaderStageState &stage_state, const 
     }
     skip |= ValidateShader64BitIndexing(module_state, entrypoint, stage_state, pipeline, loc);
     skip |= ValidateVectorTypes(module_state, loc);
+    if (enabled_features.descriptorHeap) {
+        skip |= ValidateShaderDescriptorSetAndBindingMappingInfo(module_state, entrypoint, pipeline, stage_state, loc);
+    }
 
     if (pipeline) {
         if (enabled_features.transformFeedback) {
@@ -2988,6 +3020,349 @@ bool CoreChecks::ValidateDataGraphPipelineShaderModuleSpirv(VkDevice device, con
                              "(%s) invalid for tensor resource with (descriptorSet %" PRIu32 ", binding %" PRIu32 ")",
                              string_VkTensorUsageFlagsARM(tensor_desc->usage).c_str(), resource.descriptorSet, resource.binding);
             }
+        }
+    }
+
+    return skip;
+}
+
+static uint32_t GetHeapOffset(VkDescriptorMappingSourceEXT source, const VkDescriptorMappingSourceDataEXT& sourceData) {
+    switch (source) {
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT:
+            return sourceData.constantOffset.heapOffset;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT:
+            return sourceData.pushIndex.heapOffset;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT:
+            return sourceData.indirectIndex.heapOffset;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT:
+            return sourceData.indirectIndexArray.heapOffset;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT:
+            return sourceData.shaderRecordIndex.heapOffset;
+        default:
+            return 0;
+    }
+}
+
+static uint32_t GetHeapArrayStride(VkDescriptorMappingSourceEXT source, const VkDescriptorMappingSourceDataEXT& sourceData) {
+    switch (source) {
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT:
+            return sourceData.constantOffset.heapArrayStride;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT:
+            return sourceData.pushIndex.heapArrayStride;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT:
+            return sourceData.indirectIndex.heapArrayStride;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT:
+            return sourceData.shaderRecordIndex.heapArrayStride;
+        default:
+            return 0;
+    }
+}
+
+static uint32_t GetSamplerHeapOffset(VkDescriptorMappingSourceEXT source, const VkDescriptorMappingSourceDataEXT& sourceData) {
+    switch (source) {
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT:
+            return sourceData.constantOffset.samplerHeapOffset;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT:
+            return sourceData.pushIndex.samplerHeapOffset;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT:
+            return sourceData.indirectIndex.samplerHeapOffset;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT:
+            return sourceData.indirectIndexArray.samplerHeapOffset;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT:
+            return sourceData.shaderRecordIndex.samplerHeapOffset;
+        default:
+            return 0;
+    }
+}
+
+static uint32_t GetSamplerHeapArrayStride(VkDescriptorMappingSourceEXT source, const VkDescriptorMappingSourceDataEXT& sourceData) {
+    switch (source) {
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT:
+            return sourceData.constantOffset.samplerHeapArrayStride;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT:
+            return sourceData.pushIndex.samplerHeapArrayStride;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT:
+            return sourceData.indirectIndex.samplerHeapArrayStride;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT:
+            return sourceData.shaderRecordIndex.samplerHeapArrayStride;
+        default:
+            return 0;
+    }
+}
+
+bool CoreChecks::ValidateShaderDescriptorSetAndBindingMappingInfo(const spirv::Module& module_state,
+                                                                  const spirv::EntryPoint& entrypoint,
+                                                                  const vvl::Pipeline* pipeline,
+                                                                  const ShaderStageState& stage_state, const Location& loc) const {
+    bool skip = false;
+    const auto* mapping_info = vku::FindStructInPNextChain<VkShaderDescriptorSetAndBindingMappingInfoEXT>(stage_state.GetPNext());
+    const bool descriptor_heap_flag =
+        pipeline ? (pipeline->create_flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT) != 0
+                 : (stage_state.shader_object_create_info->flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) != 0;
+
+    // Enumerate SPIRV code variables
+    for (const spirv::ResourceInterfaceVariable& resource_interface_variable : entrypoint.resource_interface_variables) {
+        if (!resource_interface_variable.decorations.IsDescriptorSet()) {
+            continue;
+        }
+        const uint32_t descriptor_set = resource_interface_variable.decorations.set;
+        const uint32_t descriptor_binding = resource_interface_variable.decorations.binding;
+        bool report = true;
+
+        if (!mapping_info) {
+            continue;
+        }
+
+        // Now we have extracted from SPIRV code descriptor set, binding. Lets enumerate mappings
+        for (uint32_t i = 0; i < mapping_info->mappingCount; i++) {
+            const auto& mapping = mapping_info->pMappings[i];
+            if (mapping.descriptorSet != descriptor_set || descriptor_binding < mapping.firstBinding ||
+                descriptor_binding >= mapping.firstBinding + uint64_t(mapping.bindingCount)) {
+                continue;
+            }
+
+            const spirv::Instruction& base_type = resource_interface_variable.base_type;
+            const uint32_t base_opcode = base_type.Opcode();
+
+            if (!ResourceTypeMatchesBinding(mapping.resourceMask, resource_interface_variable)) {
+                continue;
+            }
+
+            report = false;
+
+            // Check whether mapping is covered by VUIDs 11251-11254
+            if (IsValueIn(mapping.source, {VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT})) {
+                const bool sampledImage =
+                    (base_opcode == spv::OpTypeSampledImage) || resource_interface_variable.is_type_sampled_image;
+
+                const char* vuid = nullptr;
+                VkDeviceSize align = 0;
+                Field align_field = Field::Empty;
+                if (sampledImage) {
+                    vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11254";
+                    align = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment;
+                    align_field = Field::samplerDescriptorAlignment;
+                } else if (base_opcode == spv::OpTypeImage) {
+                    vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11251";
+                    align = phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment;
+                    align_field = Field::imageDescriptorAlignment;
+                } else if (base_opcode == spv::OpTypeStruct) {
+                    vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11252";
+                    align = phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment;
+                    align_field = Field::bufferDescriptorAlignment;
+                } else if (base_opcode == spv::OpTypeSampler) {
+                    vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11253";
+                    align = phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment;
+                    align_field = Field::samplerDescriptorAlignment;
+                } else if (base_opcode == spv::OpTypeSampler) {
+                    vuid = "VUID-VkDescriptorSetAndBindingMappingEXT-source-11390";
+                    align = phys_dev_ext_props.descriptor_heap_tensor_props.tensorDescriptorAlignment;
+                    align_field = Field::tensorDescriptorAlignment;
+                } else {
+                    continue;
+                }
+
+                const uint32_t offset = sampledImage ? GetSamplerHeapOffset(mapping.source, mapping.sourceData)
+                                                     : GetHeapOffset(mapping.source, mapping.sourceData);
+                const uint32_t arrayStride = sampledImage ? GetSamplerHeapArrayStride(mapping.source, mapping.sourceData)
+                                                          : GetHeapArrayStride(mapping.source, mapping.sourceData);
+
+                if ((offset && !IsIntegerMultipleOf(offset, align)) || (arrayStride && !IsIntegerMultipleOf(arrayStride, align))) {
+                    skip |= LogError(vuid, module_state.handle(), loc,
+                                     "mapping[%" PRIu32 "] of mapping source %s for %s is unaligned: %s (%" PRIu32
+                                     ") and %s (%" PRIu32 ") must both be aligned with %s (%" PRIu64 ").",
+                                     i, string_VkDescriptorMappingSourceEXT(mapping.source),
+                                     resource_interface_variable.DescribeDescriptor().c_str(),
+                                     sampledImage ? "samplerHeapOffset" : "heapOffset", offset,
+                                     sampledImage ? "samplerHeapArrayStride" : "heapArrayStride", arrayStride, String(align_field),
+                                     align);
+                }
+            }
+
+            if (IsValueIn(mapping.source,
+                          {VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT, VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT,
+                           VK_DESCRIPTOR_MAPPING_SOURCE_RESOURCE_HEAP_DATA_EXT})) {
+                const bool block = resource_interface_variable.type_struct_info &&
+                                   resource_interface_variable.type_struct_info->decorations.Has(spirv::DecorationSet::block_bit);
+                if (!block || resource_interface_variable.storage_class != spv::StorageClassUniform) {
+                    const char* vuid =
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11315" : "VUID-VkShaderCreateInfoEXT-pNext-11315";
+                    const bool is_uniform = resource_interface_variable.storage_class == spv::StorageClassUniform;
+                    const char* msg = !is_uniform ? "must be StorageClass Uniform" : "is not decorated with block";
+                    skip |= LogError(vuid, module_state.handle(), loc,
+                                     "mapping[%" PRIu32 "] of mapping source %s for points to %s with storage class %s, but it %s",
+                                     i, string_VkDescriptorMappingSourceEXT(mapping.source),
+                                     resource_interface_variable.DescribeDescriptor().c_str(),
+                                     string_SpvStorageClass(resource_interface_variable.storage_class), msg);
+                } else if (resource_interface_variable.storage_class == spv::StorageClassUniform &&
+                           resource_interface_variable.IsArray()) {
+                    // Additional VU because we currently mark array of Block Structs the same in |resource_interface_variable|
+                    const char* vuid =
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11315" : "VUID-VkShaderCreateInfoEXT-pNext-11315";
+                    skip |= LogError(vuid, module_state.handle(), loc,
+                                     "mapping[%" PRIu32
+                                     "] of mapping source %s for points to %s with storage class Uniform, but it is an array. "
+                                     "Array of descriptors are not allowed, it must only be a Block structure type",
+                                     i, string_VkDescriptorMappingSourceEXT(mapping.source),
+                                     resource_interface_variable.DescribeDescriptor().c_str());
+                }
+            }
+            if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT) {
+                // If there is a runtime array, we can't detect statically, but should be handled in some GPU-AV check
+                if (resource_interface_variable.type_struct_info &&
+                    !resource_interface_variable.type_struct_info->has_runtime_array) {
+                    const uint32_t struct_size = resource_interface_variable.type_struct_info->GetSize(module_state).size;
+                    if (struct_size >
+                        mapping.sourceData.pushDataOffset + phys_dev_ext_props.descriptor_heap_props.maxPushDataSize) {
+                        const char* vuid = pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11316"
+                                                    : "VUID-VkShaderCreateInfoEXT-pNext-11316";
+                        skip |=
+                            LogError(vuid, module_state.handle(), loc,
+                                     "mapping[%" PRIu32 "] points to %s (structure of size %" PRIu32
+                                     ") that is larger than sum of pushDataOffset (%" PRIu32 ") and maxPushDataSize (%" PRIu64 ").",
+                                     i, resource_interface_variable.DescribeDescriptor().c_str(), struct_size,
+                                     mapping.sourceData.pushDataOffset, phys_dev_ext_props.descriptor_heap_props.maxPushDataSize);
+                    }
+                }
+            }
+            if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT) {
+                const uint32_t struct_size = resource_interface_variable.type_struct_info
+                                                 ? resource_interface_variable.type_struct_info->GetSize(module_state).size
+                                                 : 0;
+                if (mapping.sourceData.shaderRecordDataOffset + struct_size >
+                    phys_dev_ext_props.ray_tracing_props_khr.maxShaderGroupStride) {
+                    const char* vuid =
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11317" : "VUID-VkShaderCreateInfoEXT-pNext-11317";
+                    skip |= LogError(vuid, module_state.handle(), loc,
+                                     "mapping[%" PRIu32 "] for points to %s (structure of size %" PRIu32
+                                     "). Sum of its size and shaderRecordDataOffset (%" PRIu32
+                                     ") is larger than maxShaderGroupStride (%" PRIu32 ").",
+                                     i, resource_interface_variable.DescribeDescriptor().c_str(), struct_size,
+                                     mapping.sourceData.shaderRecordDataOffset,
+                                     phys_dev_ext_props.ray_tracing_props_khr.maxShaderGroupStride);
+                }
+            }
+            if (mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT ||
+                mapping.source == VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_ADDRESS_EXT) {
+                const auto* type_struct_info = resource_interface_variable.type_struct_info.get();
+                const bool block_bit = type_struct_info && type_struct_info->decorations.Has(spirv::DecorationSet::block_bit);
+                const bool buffer_block_bit =
+                    type_struct_info && type_struct_info->decorations.Has(spirv::DecorationSet::buffer_block_bit);
+                const spirv::Instruction* type = module_state.FindDef(resource_interface_variable.type_id);
+                const uint32_t opcode = type ? type->Opcode() : vvl::kNoIndex32;
+                const bool block_uniform = block_bit && (resource_interface_variable.storage_class == spv::StorageClassUniform);
+                const bool buffer_block_uniform =
+                    buffer_block_bit && (resource_interface_variable.storage_class == spv::StorageClassUniform);
+                const bool block_sb = block_bit && (resource_interface_variable.storage_class == spv::StorageClassStorageBuffer);
+                const bool as = (opcode == spv::OpTypeAccelerationStructureKHR) ||
+                                (opcode == spv::OpTypePointer &&
+                                 module_state.FindDef(type->Word(3))->Opcode() == spv::OpTypeAccelerationStructureKHR);
+                if (!(block_uniform || buffer_block_uniform || block_sb || as)) {
+                    skip |= LogError(
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11318" : "VUID-VkShaderCreateInfoEXT-pNext-11318",
+                        module_state.handle(), loc,
+                        "mapping[%" PRIu32
+                        "] points to %s, but is not valid.\nStorage class: %s\nOpcode: %s\nOpTypeStruct Id: %" PRIu32 ".",
+                        i, resource_interface_variable.DescribeDescriptor().c_str(),
+                        string_SpvStorageClass(resource_interface_variable.storage_class), string_SpvOpcode(opcode),
+                        type_struct_info ? type_struct_info->id : 0);
+                }
+            }
+
+            if (IsValueIn(mapping.source, {VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT,
+                                           VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT}) &&
+                GetEmbeddedSampler(mapping.source, mapping.sourceData) != nullptr) {
+                const spirv::Instruction* type = module_state.FindDef(resource_interface_variable.type_id);
+                const spirv::Instruction* type2 = nullptr;
+                const spirv::Instruction* type3 = nullptr;
+                bool array = false;
+                if (type->IsArray()) {
+                    array = true;
+                } else if (type->Opcode() == spv::OpTypePointer) {
+                    type2 = module_state.FindDef(type->Word(3));
+                    if (type2->Opcode() == spv::OpTypeRuntimeArray) {
+                        array = true;
+                        type3 = module_state.FindDef(type2->Word(2));
+                    } else if (type2->Opcode() == spv::OpTypeArray) {
+                        array = true;
+                        type3 = module_state.FindDef(type2->Word(2));
+                    }
+                }
+                if (array) {
+                    skip |= LogError(
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11399" : "VUID-VkShaderCreateInfoEXT-pNext-11399",
+                        module_state.handle(), loc,
+                        "mapping[%" PRIu32 "] of mapping source %s for %s specifies array of embedded samplers.\n%s\n%s\n%s\n", i,
+                        string_VkDescriptorMappingSourceEXT(mapping.source),
+                        resource_interface_variable.DescribeDescriptor().c_str(), type3 ? type3->Describe().c_str() : "",
+                        type2 ? type2->Describe().c_str() : "", type->Describe().c_str());
+                }
+            }
+
+            const spirv::Instruction* desc_type = module_state.FindDef(resource_interface_variable.type_id);
+            if (IsValueIn(mapping.source,
+                          {VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_ADDRESS_EXT, VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT,
+                           VK_DESCRIPTOR_MAPPING_SOURCE_INDIRECT_ADDRESS_EXT})) {
+                bool is_used_with_op_array_length = false;
+                for (const spirv::Instruction* array_length_inst : module_state.static_data_.array_length_inst) {
+                    const spirv::Instruction* type = module_state.FindDef(array_length_inst->Word(3));
+                    if (type->Opcode() == spv::OpVariable && type->Word(1) == desc_type->ResultId()) {
+                        is_used_with_op_array_length = true;
+                        break;
+                    }
+                }
+                if (is_used_with_op_array_length) {
+                    const char* vuid =
+                        pipeline ? "VUID-VkPipelineShaderStageCreateInfo-pNext-11378" : "VUID-VkShaderCreateInfoEXT-pNext-11378";
+                    skip |= LogError(vuid, module_state.handle(), loc,
+                                     "mapping[%" PRIu32 "] %s is used with OpArrayLength, but mapping source is %s", i,
+                                     resource_interface_variable.DescribeDescriptor().c_str(),
+                                     string_VkDescriptorMappingSourceEXT(mapping.source));
+                }
+            }
+
+            if (IsValueIn(
+                    mapping.source,
+                    {VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_DATA_EXT, VK_DESCRIPTOR_MAPPING_SOURCE_PUSH_ADDRESS_EXT,
+                     VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT, VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT,
+                     VK_DESCRIPTOR_MAPPING_SOURCE_INDIRECT_ADDRESS_EXT, VK_DESCRIPTOR_MAPPING_SOURCE_RESOURCE_HEAP_DATA_EXT})) {
+                if (!resource_interface_variable.all_constant_integral_expressions) {
+                    std::stringstream msg;
+                    if (resource_interface_variable.non_constant_id != 0) {
+                        // We know this is a OpAccessChain, because of how all_constant_integral_expressions is determined
+                        const spirv::Instruction* pointer = module_state.FindDef(resource_interface_variable.non_constant_id);
+                        const spirv::Instruction* base = module_state.FindDef(pointer->Word(3));
+                        for (uint32_t j = 4; j < pointer->Length(); ++j) {
+                            const spirv::Instruction* access_op = module_state.FindDef(pointer->Word(j));
+                            if (!IsValueIn((spv::Op)access_op->Opcode(),
+                                           {spv::OpConstant, spv::OpSpecConstant, spv::OpConstantComposite})) {
+                                // TODO - Currently a bit aimed towards GLSL and need a general util to help with this
+                                msg << "\n";
+                                msg << module_state.DescribeInstruction(*base) << "\n";
+                                msg << module_state.DescribeInstruction(*access_op) << "\n";
+                                msg << module_state.DescribeInstruction(*pointer) << "\n";
+                                break;
+                            }
+                        }
+                    }
+                    skip |= LogError("VUID-RuntimeSpirv-DescriptorSet-11385", module_state.handle(), loc,
+                                     "mapping[%" PRIu32 "] %s is used with non-constant expression, but mapping source is %s%s", i,
+                                     resource_interface_variable.DescribeDescriptor().c_str(),
+                                     string_VkDescriptorMappingSourceEXT(mapping.source), msg.str().c_str());
+                }
+            }
+        }
+        if (descriptor_heap_flag && report) {
+            skip |= LogError(vvl::GetSpirvInterfaceVariableVUID(loc, vvl::SpirvInterfaceVariableError::DescriptorHeapMapping_11312),
+                             module_state.handle(), loc, "%s does not have mapping (in SPIR-V code it has id %" PRIu32 ")",
+                             resource_interface_variable.DescribeDescriptor().c_str(), resource_interface_variable.id);
         }
     }
 

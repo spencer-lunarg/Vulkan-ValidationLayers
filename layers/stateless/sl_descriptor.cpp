@@ -2,6 +2,7 @@
  * Copyright (c) 2015-2026 Valve Corporation
  * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2026 Google Inc.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +19,9 @@
 
 #include <vulkan/utility/vk_format_utils.h>
 #include "error_message/error_location.h"
+#include <vulkan/vk_enum_string_helper.h>
+#include "error_message/logging.h"
+#include "state_tracker/shader_module.h"
 #include "stateless/stateless_validation.h"
 #include "generated/enum_flag_bits.h"
 #include "error_message/error_strings.h"
@@ -25,6 +29,7 @@
 #include "containers/container_utils.h"
 #include "utils/image_utils.h"
 #include "utils/math_utils.h"
+#include "utils/vk_api_utils.h"
 
 namespace stateless {
 bool Device::ValidateCoarseSampleOrderCustomNV(const VkCoarseSampleOrderCustomNV &order, const Location &order_loc) const {
@@ -222,6 +227,14 @@ bool Device::ValidateSamplerCustomBorderColor(const VkSamplerCreateInfo &create_
                                  "customBorderColorWithoutFormat feature was not enabled.");
             }
         }
+    }
+    auto custom_index_create_info = vku::FindStructInPNextChain<VkSamplerCustomBorderColorIndexCreateInfoEXT>(create_info.pNext);
+    if (custom_index_create_info &&
+        custom_index_create_info->index >= phys_dev_ext_props.custom_border_color_props.maxCustomBorderColorSamplers) {
+        skip |= LogError("VUID-VkSamplerCustomBorderColorIndexCreateInfoEXT-index-11289", device,
+                         create_info_loc.pNext(Struct::VkSamplerCustomBorderColorIndexCreateInfoEXT, Field::index),
+                         "is %" PRIu32 " but maxCustomBorderColorSamplers is %" PRIu32, custom_index_create_info->index,
+                         phys_dev_ext_props.custom_border_color_props.maxCustomBorderColorSamplers);
     }
 
     return skip;
@@ -712,6 +725,55 @@ bool Device::ValidateDescriptorSetLayoutCreateInfo(const VkDescriptorSetLayoutCr
     return skip;
 }
 
+bool Device::manual_PreCallValidateRegisterCustomBorderColorEXT(VkDevice device,
+                                                                const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                                VkBool32 requestIndex, uint32_t* pIndex,
+                                                                const Context& context) const {
+    bool skip = false;
+
+    if (requestIndex == VK_TRUE && *pIndex >= phys_dev_ext_props.custom_border_color_props.maxCustomBorderColorSamplers) {
+        const auto& error_obj = context.error_obj;
+        skip |= LogError("VUID-vkRegisterCustomBorderColorEXT-requestIndex-11287", device, error_obj.location.dot(Field::pIndex),
+                         "(%" PRIu32 ") is greater than or equal to maxCustomBorderColorSamplers (%" PRIu32 ").", *pIndex,
+                         phys_dev_ext_props.custom_border_color_props.maxCustomBorderColorSamplers);
+    }
+
+    return skip;
+}
+
+bool Device::manual_PreCallValidateUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const Context& context) const {
+    bool skip = false;
+
+    if (index >= phys_dev_ext_props.custom_border_color_props.maxCustomBorderColorSamplers) {
+        const auto& error_obj = context.error_obj;
+        skip |= LogError("VUID-vkUnregisterCustomBorderColorEXT-index-11288", device, error_obj.location.dot(Field::index),
+                         "(%" PRIu32 ") is greater than or equal to maxCustomBorderColorSamplers (%" PRIu32 ").", index,
+                         phys_dev_ext_props.custom_border_color_props.maxCustomBorderColorSamplers);
+    }
+
+    return skip;
+}
+
+bool Instance::manual_PreCallValidateGetPhysicalDeviceDescriptorSizeEXT(VkPhysicalDevice physicalDevice,
+                                                                        VkDescriptorType descriptorType,
+                                                                        const Context& context) const {
+    bool skip = false;
+
+    if (!IsValueIn(descriptorType,
+                   {VK_DESCRIPTOR_TYPE_SAMPLER, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                    VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+                    VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM,
+                    VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+                    VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT})) {
+        const auto& error_obj = context.error_obj;
+        skip |= LogError("VUID-vkGetPhysicalDeviceDescriptorSizeEXT-type-11362", physicalDevice,
+                         error_obj.location.dot(Field::descriptorType), "(%s) is not in the allowed list.",
+                         string_VkDescriptorType(descriptorType));
+    }
+
+    return skip;
+}
+
 bool Device::manual_PreCallValidateCreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
                                                              const VkAllocationCallbacks *pAllocator,
                                                              VkDescriptorSetLayout *pSetLayout, const Context &context) const {
@@ -765,7 +827,7 @@ bool Device::ValidateWriteDescriptorSet(const Context &context, const Location &
         if (IsValueIn(descriptor_type,
                       {VK_DESCRIPTOR_TYPE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
                        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT})) {
-            if (descriptor_writes.pImageInfo != nullptr &&  descriptor_type != VK_DESCRIPTOR_TYPE_SAMPLER) {
+            if (descriptor_writes.pImageInfo != nullptr && descriptor_type != VK_DESCRIPTOR_TYPE_SAMPLER) {
                 for (uint32_t descriptor_index = 0; descriptor_index < descriptor_writes.descriptorCount; ++descriptor_index) {
                     skip |= context.ValidateRangedEnum(writes_loc.dot(Field::pImageInfo, descriptor_index).dot(Field::imageLayout),
                                                        vvl::Enum::VkImageLayout,
@@ -1373,4 +1435,258 @@ bool Device::manual_PreCallValidateCmdBindDescriptorSets2(VkCommandBuffer comman
 
     return skip;
 }
+
+bool Device::manual_PreCallValidateCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                         const Context& context) const {
+    bool skip = false;
+    const auto& error_obj = context.error_obj;
+
+    if (pBindInfo->reservedRangeOffset + pBindInfo->reservedRangeSize > pBindInfo->heapRange.size) {
+        skip |= LogError("VUID-vkCmdBindSamplerHeapEXT-pBindInfo-11223", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::reservedRangeOffset),
+                         "(%" PRIu64 ") + reservedRangeSize (%" PRIu64 ") is greater than pBindInfo->heapRange.size (%" PRIu64 ").",
+                         pBindInfo->reservedRangeOffset, pBindInfo->reservedRangeSize, pBindInfo->heapRange.size);
+    }
+
+    if (pBindInfo->reservedRangeSize < phys_dev_ext_props.descriptor_heap_props.minSamplerHeapReservedRange) {
+        skip |= LogError("VUID-vkCmdBindSamplerHeapEXT-pBindInfo-11224", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::reservedRangeSize),
+                         "(%" PRIu64 ") is less than minSamplerHeapReservedRange (%" PRIu64 ").", pBindInfo->reservedRangeSize,
+                         phys_dev_ext_props.descriptor_heap_props.minSamplerHeapReservedRange);
+    }
+
+    if (pBindInfo->heapRange.size > phys_dev_ext_props.descriptor_heap_props.maxSamplerHeapSize) {
+        skip |= LogError("VUID-vkCmdBindSamplerHeapEXT-pBindInfo-11225", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::heapRange).dot(Field::size),
+                         "(%" PRIu64 ") is greater than maxSamplerHeapSize (%" PRIu64 ").", pBindInfo->heapRange.size,
+                         phys_dev_ext_props.descriptor_heap_props.maxSamplerHeapSize);
+    }
+
+    if (!IsPointerAligned(pBindInfo->heapRange.address, phys_dev_ext_props.descriptor_heap_props.samplerHeapAlignment)) {
+        skip |= LogError("VUID-vkCmdBindSamplerHeapEXT-pBindInfo-11226", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::heapRange).dot(Field::address),
+                         "(0x%" PRIx64 ") must be aligned with samplerHeapAlignment (%" PRIu64 ").", pBindInfo->heapRange.address,
+                         phys_dev_ext_props.descriptor_heap_props.samplerHeapAlignment);
+    }
+
+    if (!IsPointerAligned(pBindInfo->reservedRangeOffset, phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment)) {
+        skip |= LogError("VUID-vkCmdBindSamplerHeapEXT-pBindInfo-11434", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::reservedRangeOffset),
+                         "(0x%" PRIx64 ") must be aligned with samplerDescriptorAlignment (%" PRIu64 ").",
+                         pBindInfo->reservedRangeOffset, phys_dev_ext_props.descriptor_heap_props.samplerDescriptorAlignment);
+    }
+
+    return skip;
+}
+
+bool Device::manual_PreCallValidateCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                          const Context& context) const {
+    bool skip = false;
+    const auto& error_obj = context.error_obj;
+
+    if (pBindInfo->reservedRangeOffset + pBindInfo->reservedRangeSize > pBindInfo->heapRange.size) {
+        skip |= LogError("VUID-vkCmdBindResourceHeapEXT-pBindInfo-11232", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::reservedRangeOffset),
+                         "(%" PRIu64 ") + reservedRangeSize (%" PRIu64 ") is greater than pBindInfo->heapRange.size (%" PRIu64 ").",
+                         pBindInfo->reservedRangeOffset, pBindInfo->reservedRangeSize, pBindInfo->heapRange.size);
+    }
+
+    if (pBindInfo->reservedRangeSize < phys_dev_ext_props.descriptor_heap_props.minResourceHeapReservedRange) {
+        skip |= LogError("VUID-vkCmdBindResourceHeapEXT-pBindInfo-11233", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::reservedRangeSize),
+                         "(%" PRIu64 ") is less than minResourceHeapReservedRange (%" PRIu64 ").", pBindInfo->reservedRangeSize,
+                         phys_dev_ext_props.descriptor_heap_props.minResourceHeapReservedRange);
+    }
+
+    if (pBindInfo->heapRange.size > phys_dev_ext_props.descriptor_heap_props.maxResourceHeapSize) {
+        skip |= LogError("VUID-vkCmdBindResourceHeapEXT-pBindInfo-11234", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::heapRange).dot(Field::size),
+                         "(%" PRIu64 ") is greater than maxResourceHeapSize (%" PRIu64 ").", pBindInfo->heapRange.size,
+                         phys_dev_ext_props.descriptor_heap_props.maxResourceHeapSize);
+    }
+
+    if (!IsPointerAligned(pBindInfo->heapRange.address, phys_dev_ext_props.descriptor_heap_props.resourceHeapAlignment)) {
+        skip |= LogError("VUID-vkCmdBindResourceHeapEXT-pBindInfo-11235", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::heapRange).dot(Field::address),
+                         "(0x%" PRIx64 ") must be aligned with resourceHeapAlignment (%" PRIu64 ").", pBindInfo->heapRange.address,
+                         phys_dev_ext_props.descriptor_heap_props.resourceHeapAlignment);
+    }
+
+    if (!IsPointerAligned(pBindInfo->reservedRangeOffset, phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment)) {
+        skip |= LogError("VUID-vkCmdBindResourceHeapEXT-pBindInfo-11435", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::reservedRangeOffset),
+                         "(0x%" PRIx64 ") must be aligned with bufferDescriptorAlignment (%" PRIu64 ").",
+                         pBindInfo->reservedRangeOffset, phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment);
+    }
+
+    if (!IsPointerAligned(pBindInfo->reservedRangeOffset, phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment)) {
+        skip |= LogError("VUID-vkCmdBindResourceHeapEXT-pBindInfo-11436", commandBuffer,
+                         error_obj.location.dot(Field::pBindInfo).dot(Field::reservedRangeOffset),
+                         "(0x%" PRIx64 ") must be aligned with imageDescriptorAlignment (%" PRIu64 ").",
+                         pBindInfo->reservedRangeOffset, phys_dev_ext_props.descriptor_heap_props.imageDescriptorAlignment);
+    }
+    return skip;
+}
+
+bool Device::manual_PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                               const VkResourceDescriptorInfoEXT* pResources,
+                                                               const VkHostAddressRangeEXT* pDescriptors,
+                                                               const Context& context) const {
+    bool skip = false;
+    if (!pResources) {
+        return skip;
+    }
+
+    if (!enabled_features.descriptorHeap) {
+        skip |= LogError("VUID-vkWriteResourceDescriptorsEXT-descriptorHeap-11206", device, context.error_obj.location,
+                         "descriptorHeap feature was not enabled.");
+    }
+
+    for (uint32_t resourceIndex = 0; resourceIndex < resourceCount; ++resourceIndex) {
+        const auto& info = pResources[resourceIndex];
+        const Location info_loc = context.error_obj.location.dot(Field::pResources, resourceIndex);
+
+        if (IsDescriptorHeapImage(info.type)) {
+            if (!info.data.pImage && !enabled_features.nullDescriptor &&
+                (info.type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || info.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)) {
+                const Location pImage_loc = info_loc.dot(Field::pImage);
+                skip |= LogError("VUID-VkResourceDescriptorInfoEXT-None-11211", device, pImage_loc,
+                                 "is null but nullDescriptor feature is not enabled.");
+            }
+            if (info.data.pImage && info.data.pImage->pView) {
+                const Location pView_loc = info_loc.dot(Field::pImage).dot(Field::pView);
+                skip |= ValidateImageViewCreateInfo(*info.data.pImage->pView, pView_loc);
+            }
+        } else if (IsDescriptorHeapTexelBuffer(info.type)) {
+            const Location texel_buffer_loc = info_loc.dot(Field::pTexelBuffer);
+            if (info.data.pTexelBuffer) {
+                const VkTexelBufferDescriptorInfoEXT& texel_buffer = *info.data.pTexelBuffer;
+                if (enabled_features.texelBufferAlignment) {
+                    const char* vuid = nullptr;
+                    VkDeviceSize alignment = 0;
+                    const uint32_t format_size = GetTexelBufferFormatSize(texel_buffer.format);
+                    VkDeviceSize texel_block_size = VkDeviceSize(GetSmallestGreaterOrEquallPowerOfTwo(format_size));
+
+                    if (info.type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER) {
+                        alignment = phys_dev_props_core13.uniformTexelBufferOffsetSingleTexelAlignment
+                                        ? std::min(phys_dev_props_core13.uniformTexelBufferOffsetAlignmentBytes, texel_block_size)
+                                        : phys_dev_props_core13.uniformTexelBufferOffsetAlignmentBytes;
+                        vuid = phys_dev_props_core13.uniformTexelBufferOffsetSingleTexelAlignment
+                                   ? "VUID-VkResourceDescriptorInfoEXT-type-11216"
+                                   : "VUID-VkResourceDescriptorInfoEXT-type-11214";
+                    } else if (info.type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
+                        alignment = phys_dev_props_core13.storageTexelBufferOffsetSingleTexelAlignment
+                                        ? std::min(phys_dev_props_core13.storageTexelBufferOffsetAlignmentBytes, texel_block_size)
+                                        : phys_dev_props_core13.storageTexelBufferOffsetAlignmentBytes;
+                        vuid = phys_dev_props_core13.storageTexelBufferOffsetSingleTexelAlignment
+                                   ? "VUID-VkResourceDescriptorInfoEXT-type-11217"
+                                   : "VUID-VkResourceDescriptorInfoEXT-type-11215";
+                    }
+                    if (!IsIntegerMultipleOf(texel_buffer.addressRange.size, alignment)) {
+                        skip |= LogError(vuid, device, texel_buffer_loc.dot(Field::addressRange).dot(Field::size),
+                                         "(%" PRIu64 ") must be multiples of %" PRIu64, texel_buffer.addressRange.size, alignment);
+                    } else if (!IsPointerAligned(texel_buffer.addressRange.address, alignment)) {
+                        skip |= LogError(vuid, device, texel_buffer_loc.dot(Field::addressRange).dot(Field::address),
+                                         "(0x%" PRIx64 ") is not aligned to %" PRIu64 " bytes.", texel_buffer.addressRange.address,
+                                         alignment);
+                    }
+                } else {
+                    if (!IsIntegerMultipleOf(texel_buffer.addressRange.size, phys_dev_props.limits.minTexelBufferOffsetAlignment)) {
+                        skip |= LogError("VUID-VkTexelBufferDescriptorInfoEXT-None-11218", device,
+                                         texel_buffer_loc.dot(Field::addressRange).dot(Field::size),
+                                         "(%" PRIu64 ") must be multiples of minTexelBufferOffsetAlignment (%" PRIu64 ")",
+                                         texel_buffer.addressRange.size, phys_dev_props.limits.minTexelBufferOffsetAlignment);
+                    } else if (!IsPointerAligned(texel_buffer.addressRange.address,
+                                                 phys_dev_props.limits.minTexelBufferOffsetAlignment)) {
+                        skip |= LogError("VUID-VkTexelBufferDescriptorInfoEXT-None-11218", device,
+                                         texel_buffer_loc.dot(Field::addressRange).dot(Field::address),
+                                         "(0x%" PRIx64 ") is not aligned to minTexelBufferOffsetAlignment (%" PRIu64 ")",
+                                         texel_buffer.addressRange.address, phys_dev_props.limits.minTexelBufferOffsetAlignment);
+                    }
+                }
+            } else if (!enabled_features.nullDescriptor) {
+                skip |= LogError("VUID-VkResourceDescriptorInfoEXT-None-11212", device, texel_buffer_loc,
+                                 "is null but nullDescriptor feature is not enabled.");
+            }
+        } else if (IsDescriptorHeapAddr(info.type)) {
+            if (!info.data.pAddressRange && !enabled_features.nullDescriptor) {
+                skip |= LogError("VUID-VkResourceDescriptorInfoEXT-None-11213", device, info_loc.dot(Field::pAddressRange),
+                                 "is null but nullDescriptor feature is not enabled.");
+            }
+            if (info.data.pAddressRange) {
+                if (info.type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+                    if (!IsPointerAligned(info.data.pAddressRange->address,
+                                          phys_dev_props.limits.minUniformBufferOffsetAlignment)) {
+                        skip |= LogError("VUID-VkResourceDescriptorInfoEXT-type-11452", device,
+                                         info_loc.dot(Field::pAddressRange).dot(Field::address),
+                                         "(0x%" PRIx64 ") is not aligned to minUniformBufferOffsetAlignment (%" PRIu64 ")",
+                                         info.data.pAddressRange->address, phys_dev_props.limits.minUniformBufferOffsetAlignment);
+                    }
+                    if (!IsIntegerMultipleOf(info.data.pAddressRange->size,
+                                             phys_dev_props.limits.minUniformBufferOffsetAlignment)) {
+                        skip |= LogError("VUID-VkResourceDescriptorInfoEXT-type-11452", device,
+                                         info_loc.dot(Field::pAddressRange).dot(Field::size),
+                                         "(%" PRIu64 ") must be a multiple of minUniformBufferOffsetAlignment (%" PRIu64 ")",
+                                         info.data.pAddressRange->size, phys_dev_props.limits.minUniformBufferOffsetAlignment);
+                    }
+                } else if (info.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+                    if (!IsPointerAligned(info.data.pAddressRange->address,
+                                          phys_dev_props.limits.minStorageBufferOffsetAlignment)) {
+                        skip |= LogError("VUID-VkResourceDescriptorInfoEXT-type-11453", device,
+                                         info_loc.dot(Field::pAddressRange).dot(Field::address),
+                                         "(0x%" PRIx64 ") is not aligned to minStorageBufferOffsetAlignment (%" PRIu64 ")",
+                                         info.data.pAddressRange->address, phys_dev_props.limits.minStorageBufferOffsetAlignment);
+                    }
+                    if (!IsIntegerMultipleOf(info.data.pAddressRange->size,
+                                             phys_dev_props.limits.minStorageBufferOffsetAlignment)) {
+                        skip |= LogError("VUID-VkResourceDescriptorInfoEXT-type-11453", device,
+                                         info_loc.dot(Field::pAddressRange).dot(Field::size),
+                                         "(%" PRIu64 ") must be a multiple of minStorageBufferOffsetAlignment (%" PRIu64 ")",
+                                         info.data.pAddressRange->size, phys_dev_props.limits.minStorageBufferOffsetAlignment);
+                    }
+                } else if (IsValueIn(info.type,
+                                     {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV,
+                                      VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV})) {
+                    if (!IsPointerAligned(info.data.pAddressRange->address, 256)) {
+                        skip |= LogError("VUID-VkResourceDescriptorInfoEXT-type-11454", device,
+                                         info_loc.dot(Field::pAddressRange).dot(Field::address),
+                                         "(0x%" PRIx64 ") is not aligned to 256", info.data.pAddressRange->address);
+                    }
+                    if (!IsIntegerMultipleOf(info.data.pAddressRange->size, 256)) {
+                        skip |= LogError("VUID-VkResourceDescriptorInfoEXT-type-11454", device,
+                                         info_loc.dot(Field::pAddressRange).dot(Field::size),
+                                         "(%" PRIu64 ") must be a multiple of 256", info.data.pAddressRange->size);
+                    }
+                }
+            }
+        } else {
+            skip |= LogError("VUID-VkResourceDescriptorInfoEXT-type-11210", device, info_loc.dot(Field::type),
+                             "(%s) is not a supported type when using descriptor heaps.", string_VkDescriptorType(info.type));
+        }
+
+        const auto* object_name = vku::FindStructInPNextChain<VkDebugUtilsObjectNameInfoEXT>(pResources[resourceIndex].pNext);
+        if (object_name && object_name->objectType != VK_OBJECT_TYPE_UNKNOWN) {
+            skip |= LogError("VUID-VkResourceDescriptorInfoEXT-pNext-11401", device, info_loc.dot(Field::pNext),
+                             "contains VkDebugUtilsObjectNameInfoEXT structure with objectType %s.",
+                             string_VkObjectType(object_name->objectType));
+        }
+    }
+
+    return skip;
+}
+
+bool Device::manual_PreCallValidateWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount,
+                                                              const VkSamplerCreateInfo* pSamplers,
+                                                              const VkHostAddressRangeEXT* pDescriptors,
+                                                              const Context& context) const {
+    bool skip = false;
+    for (uint32_t samplerIndex = 0; samplerIndex < samplerCount; ++samplerIndex) {
+        const auto& sampler_ci = pSamplers[samplerIndex];
+        const Location info_loc = context.error_obj.location.dot(Field::pSamplers, samplerIndex);
+        skip |= ValidateSamplerCreateInfo(sampler_ci, info_loc, context);
+    }
+
+    return skip;
+}
+
 }  // namespace stateless

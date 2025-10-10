@@ -24,6 +24,10 @@
 #include "containers/custom_containers.h"
 #include "utils/lock_utils.h"
 
+namespace spirv {
+struct ResourceInterfaceVariable;
+}
+
 enum class ShaderObjectStage : uint32_t {
     VERTEX = 0u,
     TESSELLATION_CONTROL,
@@ -105,3 +109,6 @@ class ValidationCache {
 };
 
 void DumpSpirvToFile(const std::string &file_name, const uint32_t *spirv, size_t spirv_dwords_count);
+
+bool ResourceTypeMatchesBinding(VkSpirvResourceTypeFlagsEXT resource_type,
+                                const spirv::ResourceInterfaceVariable& resource_interface_variable);

@@ -1234,6 +1234,37 @@ void BestPractices::PostCallRecordGetExecutionGraphPipelineNodeIndexAMDX(VkDevic
 }
 #endif  // VK_ENABLE_BETA_EXTENSIONS
 
+void BestPractices::PostCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount,
+                                                             const VkSamplerCreateInfo* pSamplers,
+                                                             const VkHostAddressRangeEXT* pDescriptors,
+                                                             const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                              const VkResourceDescriptorInfoEXT* pResources,
+                                                              const VkHostAddressRangeEXT* pDescriptors,
+                                                              const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                               VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordRegisterCustomBorderColorEXT(VkDevice device,
+                                                               const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                               VkBool32 requestIndex, uint32_t* pIndex,
+                                                               const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
+void BestPractices::PostCallRecordGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                                VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {
+    bp_state::LogResult(*this, device, record_obj);
+}
+
 void BestPractices::PostCallRecordGetImageDrmFormatModifierPropertiesEXT(VkDevice device, VkImage image,
                                                                          VkImageDrmFormatModifierPropertiesEXT* pProperties,
                                                                          const RecordObject& record_obj) {

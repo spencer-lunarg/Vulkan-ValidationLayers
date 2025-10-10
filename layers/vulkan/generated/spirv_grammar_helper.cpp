@@ -755,6 +755,16 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpGroupNonUniformQuadAllKHR";
         case spv::OpGroupNonUniformQuadAnyKHR:
             return "OpGroupNonUniformQuadAnyKHR";
+        case spv::OpTypeBufferEXT:
+            return "OpTypeBufferEXT";
+        case spv::OpBufferPointerEXT:
+            return "OpBufferPointerEXT";
+        case spv::OpUntypedImageTexelPointerEXT:
+            return "OpUntypedImageTexelPointerEXT";
+        case spv::OpMemberDecorateIdEXT:
+            return "OpMemberDecorateIdEXT";
+        case spv::OpConstantSizeOfEXT:
+            return "OpConstantSizeOfEXT";
         case spv::OpHitObjectRecordHitMotionNV:
             return "OpHitObjectRecordHitMotionNV";
         case spv::OpHitObjectRecordHitWithIndexMotionNV:
@@ -1627,6 +1637,10 @@ const char* string_SpvDecoration(uint32_t decoration) {
             return "BlockMatchSamplerQCOM";
         case spv::DecorationExplicitInterpAMD:
             return "ExplicitInterpAMD";
+        case spv::DecorationArrayStrideIdEXT:
+            return "ArrayStrideIdEXT";
+        case spv::DecorationOffsetIdEXT:
+            return "OffsetIdEXT";
         case spv::DecorationOverrideCoverageNV:
             return "OverrideCoverageNV";
         case spv::DecorationPassthroughNV:
@@ -1957,6 +1971,10 @@ const char* string_SpvBuiltIn(spv::BuiltIn built_in) {
             return "BaryCoordPullModelAMD";
         case spv::BuiltInFragStencilRefEXT:
             return "FragStencilRefEXT";
+        case spv::BuiltInSamplerHeapEXT:
+            return "SamplerHeapEXT";
+        case spv::BuiltInResourceHeapEXT:
+            return "ResourceHeapEXT";
         case spv::BuiltInViewportMaskNV:
             return "ViewportMaskNV";
         case spv::BuiltInSecondaryPositionNV:
@@ -2502,6 +2520,11 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpReadClockKHR, {{OperandKind::Id}}},
         {spv::OpGroupNonUniformQuadAllKHR, {{OperandKind::Id}}},
         {spv::OpGroupNonUniformQuadAnyKHR, {{OperandKind::Id}}},
+        {spv::OpTypeBufferEXT, {{OperandKind::ValueEnum}}},
+        {spv::OpBufferPointerEXT, {{OperandKind::Id}}},
+        {spv::OpUntypedImageTexelPointerEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpMemberDecorateIdEXT, {{OperandKind::Id, OperandKind::Literal, OperandKind::ValueEnum}}},
+        {spv::OpConstantSizeOfEXT, {{OperandKind::Id}}},
         {spv::OpHitObjectRecordHitMotionNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpHitObjectRecordHitWithIndexMotionNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpHitObjectRecordMissMotionNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},

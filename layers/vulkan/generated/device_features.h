@@ -196,6 +196,10 @@ struct DeviceFeatures {
     bool descriptorBufferPushDescriptors;
     // VkPhysicalDeviceDescriptorBufferTensorFeaturesARM
     bool descriptorBufferTensorDescriptors;
+    // VkPhysicalDeviceDescriptorHeapFeaturesEXT
+    bool descriptorHeap;
+    // VkPhysicalDeviceDescriptorHeapFeaturesEXT
+    bool descriptorHeapCaptureReplay;
     // VkPhysicalDeviceDescriptorIndexingFeatures, VkPhysicalDeviceVulkan12Features
     bool descriptorBindingPartiallyBound;
     // VkPhysicalDeviceDescriptorIndexingFeatures, VkPhysicalDeviceVulkan12Features
@@ -1072,6 +1076,6 @@ struct DeviceFeatures {
     bool zeroInitializeDeviceMemory;
 };
 
-void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatures *features, const APIVersion &api_version);
+void GetEnabledDeviceFeatures(const VkDeviceCreateInfo* pCreateInfo, DeviceFeatures* features, const APIVersion& api_version);
 
 // NOLINTEND

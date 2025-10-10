@@ -700,3 +700,12 @@ TEST_F(VkPositiveLayerTest, PhysicalDeviceLayeredApiVulkanProperties) {
     VkPhysicalDeviceProperties2 phys_dev_props_2 = vku::InitStructHelper(&api_prop_lists);
     vk::GetPhysicalDeviceProperties2(Gpu(), &phys_dev_props_2);
 }
+
+TEST_F(VkPositiveLayerTest, HeapWithoutUntypedPointers) {
+    SetTargetApiVersion(VK_API_VERSION_1_1);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    RETURN_IF_SKIP(InitFramework());
+    if (DeviceExtensionSupported(VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME))
+        GTEST_SKIP() << "Need VK_KHR_shader_untyped_pointers not supported";
+    InitState();
+}

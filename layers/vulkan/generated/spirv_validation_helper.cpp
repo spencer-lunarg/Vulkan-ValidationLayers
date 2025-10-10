@@ -45,14 +45,14 @@ struct FeaturePointer {
     // Default and nullptr constructor to create an empty FeaturePointer
     FeaturePointer() : IsEnabled(nullptr) {}
     FeaturePointer(std::nullptr_t ptr) : IsEnabled(nullptr) {}
-    FeaturePointer(bool DeviceFeatures::*ptr) : IsEnabled([=](const DeviceFeatures& features) { return features.*ptr; }) {}
+    FeaturePointer(bool DeviceFeatures::* ptr) : IsEnabled([=](const DeviceFeatures& features) { return features.*ptr; }) {}
 };
 
 // Each instance of the struct will only have a singel field non-null
 struct RequiredSpirvInfo {
     uint32_t version;
     FeaturePointer feature;
-    ExtEnabled DeviceExtensions::*extension;
+    ExtEnabled DeviceExtensions::* extension;
     const char* property;  // For human readability and make some capabilities unique
 };
 
@@ -290,6 +290,7 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo>& GetSpirvCapabilites(
         {spv::CapabilityFMAKHR, {0, &DeviceFeatures::shaderFmaFloat64, nullptr, ""}},
         {spv::CapabilityShader64BitIndexingEXT, {0, &DeviceFeatures::shader64BitIndexing, nullptr, ""}},
         {spv::CapabilityLongVectorEXT, {0, &DeviceFeatures::longVector, nullptr, ""}},
+        {spv::CapabilityDescriptorHeapEXT, {0, &DeviceFeatures::descriptorHeap, nullptr, ""}},
     };
     // clang-format on
     return spirv_capabilities;
@@ -421,6 +422,7 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo>& GetSpirvExte
         {"SPV_KHR_untyped_pointers", {0, nullptr, &DeviceExtensions::vk_khr_shader_untyped_pointers, ""}},
         {"SPV_EXT_shader_64bit_indexing", {0, nullptr, &DeviceExtensions::vk_ext_shader_64bit_indexing, ""}},
         {"SPV_EXT_long_vector", {0, nullptr, &DeviceExtensions::vk_ext_shader_long_vector, ""}},
+        {"SPV_EXT_descriptor_heap", {0, nullptr, &DeviceExtensions::vk_ext_descriptor_heap, ""}},
     };
     // clang-format on
     return spirv_extensions;
@@ -668,6 +670,8 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "BFloat16DotProductKHR";
         case spv::CapabilityBFloat16CooperativeMatrixKHR:
             return "BFloat16CooperativeMatrixKHR";
+        case spv::CapabilityDescriptorHeapEXT:
+            return "DescriptorHeapEXT";
         case spv::CapabilitySampleMaskOverrideCoverageNV:
             return "SampleMaskOverrideCoverageNV";
         case spv::CapabilityGeometryShaderPassthroughNV:
@@ -1237,6 +1241,7 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityFMAKHR, "VkPhysicalDeviceShaderFmaFeaturesKHR::shaderFmaFloat16 OR VkPhysicalDeviceShaderFmaFeaturesKHR::shaderFmaFloat32 OR VkPhysicalDeviceShaderFmaFeaturesKHR::shaderFmaFloat64"},
     {spv::CapabilityShader64BitIndexingEXT, "VkPhysicalDeviceShader64BitIndexingFeaturesEXT::shader64BitIndexing"},
     {spv::CapabilityLongVectorEXT, "VkPhysicalDeviceShaderLongVectorFeaturesEXT::longVector"},
+    {spv::CapabilityDescriptorHeapEXT, "VkPhysicalDeviceDescriptorHeapFeaturesEXT::descriptorHeap"},
     };
 
     // VUs before catch unknown capabilities
@@ -1348,6 +1353,7 @@ static inline std::string SpvExtensionRequirements(std::string_view extension) {
     {"SPV_KHR_untyped_pointers", {{vvl::Extension::_VK_KHR_shader_untyped_pointers}}},
     {"SPV_EXT_shader_64bit_indexing", {{vvl::Extension::_VK_EXT_shader_64bit_indexing}}},
     {"SPV_EXT_long_vector", {{vvl::Extension::_VK_EXT_shader_long_vector}}},
+    {"SPV_EXT_descriptor_heap", {{vvl::Extension::_VK_EXT_descriptor_heap}}},
     };
 
     // VUs before catch unknown extensions

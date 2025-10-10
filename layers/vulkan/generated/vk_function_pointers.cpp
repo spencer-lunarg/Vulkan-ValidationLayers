@@ -577,6 +577,16 @@ PFN_vkCmdDispatchGraphAMDX CmdDispatchGraphAMDX;
 PFN_vkCmdDispatchGraphIndirectAMDX CmdDispatchGraphIndirectAMDX;
 PFN_vkCmdDispatchGraphIndirectCountAMDX CmdDispatchGraphIndirectCountAMDX;
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+PFN_vkWriteSamplerDescriptorsEXT WriteSamplerDescriptorsEXT;
+PFN_vkWriteResourceDescriptorsEXT WriteResourceDescriptorsEXT;
+PFN_vkCmdBindSamplerHeapEXT CmdBindSamplerHeapEXT;
+PFN_vkCmdBindResourceHeapEXT CmdBindResourceHeapEXT;
+PFN_vkCmdPushDataEXT CmdPushDataEXT;
+PFN_vkGetImageOpaqueCaptureDataEXT GetImageOpaqueCaptureDataEXT;
+PFN_vkGetPhysicalDeviceDescriptorSizeEXT GetPhysicalDeviceDescriptorSizeEXT;
+PFN_vkRegisterCustomBorderColorEXT RegisterCustomBorderColorEXT;
+PFN_vkUnregisterCustomBorderColorEXT UnregisterCustomBorderColorEXT;
+PFN_vkGetTensorOpaqueCaptureDataARM GetTensorOpaqueCaptureDataARM;
 PFN_vkCmdSetSampleLocationsEXT CmdSetSampleLocationsEXT;
 PFN_vkGetPhysicalDeviceMultisamplePropertiesEXT GetPhysicalDeviceMultisamplePropertiesEXT;
 PFN_vkGetImageDrmFormatModifierPropertiesEXT GetImageDrmFormatModifierPropertiesEXT;
@@ -2102,6 +2112,20 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
         },
 #endif  // VK_ENABLE_BETA_EXTENSIONS
         {
+            "VK_EXT_descriptor_heap", [](VkInstance instance, VkDevice device) {
+                WriteSamplerDescriptorsEXT = reinterpret_cast<PFN_vkWriteSamplerDescriptorsEXT>(GetDeviceProcAddr(device, "vkWriteSamplerDescriptorsEXT"));
+                WriteResourceDescriptorsEXT = reinterpret_cast<PFN_vkWriteResourceDescriptorsEXT>(GetDeviceProcAddr(device, "vkWriteResourceDescriptorsEXT"));
+                CmdBindSamplerHeapEXT = reinterpret_cast<PFN_vkCmdBindSamplerHeapEXT>(GetDeviceProcAddr(device, "vkCmdBindSamplerHeapEXT"));
+                CmdBindResourceHeapEXT = reinterpret_cast<PFN_vkCmdBindResourceHeapEXT>(GetDeviceProcAddr(device, "vkCmdBindResourceHeapEXT"));
+                CmdPushDataEXT = reinterpret_cast<PFN_vkCmdPushDataEXT>(GetDeviceProcAddr(device, "vkCmdPushDataEXT"));
+                GetImageOpaqueCaptureDataEXT = reinterpret_cast<PFN_vkGetImageOpaqueCaptureDataEXT>(GetDeviceProcAddr(device, "vkGetImageOpaqueCaptureDataEXT"));
+                RegisterCustomBorderColorEXT = reinterpret_cast<PFN_vkRegisterCustomBorderColorEXT>(GetDeviceProcAddr(device, "vkRegisterCustomBorderColorEXT"));
+                UnregisterCustomBorderColorEXT = reinterpret_cast<PFN_vkUnregisterCustomBorderColorEXT>(GetDeviceProcAddr(device, "vkUnregisterCustomBorderColorEXT"));
+                GetTensorOpaqueCaptureDataARM = reinterpret_cast<PFN_vkGetTensorOpaqueCaptureDataARM>(GetDeviceProcAddr(device, "vkGetTensorOpaqueCaptureDataARM"));
+                GetPhysicalDeviceDescriptorSizeEXT = reinterpret_cast<PFN_vkGetPhysicalDeviceDescriptorSizeEXT>(GetInstanceProcAddr(instance, "vkGetPhysicalDeviceDescriptorSizeEXT"));
+            }
+        },
+        {
             "VK_EXT_sample_locations", [](VkInstance instance, VkDevice device) {
                 CmdSetSampleLocationsEXT = reinterpret_cast<PFN_vkCmdSetSampleLocationsEXT>(GetDeviceProcAddr(device, "vkCmdSetSampleLocationsEXT"));
                 GetPhysicalDeviceMultisamplePropertiesEXT = reinterpret_cast<PFN_vkGetPhysicalDeviceMultisamplePropertiesEXT>(GetInstanceProcAddr(instance, "vkGetPhysicalDeviceMultisamplePropertiesEXT"));
@@ -3064,6 +3088,16 @@ void ResetAllExtensions() {
     CmdDispatchGraphIndirectAMDX = nullptr;
     CmdDispatchGraphIndirectCountAMDX = nullptr;
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+    WriteSamplerDescriptorsEXT = nullptr;
+    WriteResourceDescriptorsEXT = nullptr;
+    CmdBindSamplerHeapEXT = nullptr;
+    CmdBindResourceHeapEXT = nullptr;
+    CmdPushDataEXT = nullptr;
+    GetImageOpaqueCaptureDataEXT = nullptr;
+    GetPhysicalDeviceDescriptorSizeEXT = nullptr;
+    RegisterCustomBorderColorEXT = nullptr;
+    UnregisterCustomBorderColorEXT = nullptr;
+    GetTensorOpaqueCaptureDataARM = nullptr;
     CmdSetSampleLocationsEXT = nullptr;
     GetPhysicalDeviceMultisamplePropertiesEXT = nullptr;
     GetImageDrmFormatModifierPropertiesEXT = nullptr;

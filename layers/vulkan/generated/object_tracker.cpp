@@ -77,6 +77,7 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
     skip |= ReportLeakedObjects(kVulkanObjectTypePipelineBinaryKHR, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeCuModuleNVX, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeCuFunctionNVX, error_code, loc);
+    skip |= ReportLeakedObjects(kVulkanObjectTypeTensorARM, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeValidationCacheEXT, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeAccelerationStructureNV, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypePerformanceConfigurationINTEL, error_code, loc);
@@ -86,7 +87,6 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
     skip |= ReportLeakedObjects(kVulkanObjectTypeAccelerationStructureKHR, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeBufferCollectionFUCHSIA, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeMicromapEXT, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeTensorARM, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeTensorViewARM, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeOpticalFlowSessionNV, error_code, loc);
     skip |= ReportLeakedObjects(kVulkanObjectTypeShaderEXT, error_code, loc);
@@ -138,6 +138,7 @@ void Device::DestroyLeakedObjects() {
     DestroyUndestroyedObjects(kVulkanObjectTypePipelineBinaryKHR, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeCuModuleNVX, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeCuFunctionNVX, loc);
+    DestroyUndestroyedObjects(kVulkanObjectTypeTensorARM, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeValidationCacheEXT, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeAccelerationStructureNV, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypePerformanceConfigurationINTEL, loc);
@@ -147,7 +148,6 @@ void Device::DestroyLeakedObjects() {
     DestroyUndestroyedObjects(kVulkanObjectTypeAccelerationStructureKHR, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeBufferCollectionFUCHSIA, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeMicromapEXT, loc);
-    DestroyUndestroyedObjects(kVulkanObjectTypeTensorARM, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeTensorViewARM, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeOpticalFlowSessionNV, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeShaderEXT, loc);
@@ -1335,7 +1335,7 @@ bool Device::PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCa
                                        "UNASSIGNED-VkShaderModuleValidationCacheCreateInfoEXT-validationCache-parent",
                                        pNext_loc.dot(Field::validationCache));
             }
-            skip |= ValidateObject(pCreateInfos[index0].layout, kVulkanObjectTypePipelineLayout, false, false,
+            skip |= ValidateObject(pCreateInfos[index0].layout, kVulkanObjectTypePipelineLayout, true, false,
                                    "VUID-VkComputePipelineCreateInfo-layout-parameter",
                                    "VUID-VkComputePipelineCreateInfo-commonparent", index0_loc.dot(Field::layout));
             if ((pCreateInfos[index0].flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT) && (pCreateInfos[index0].basePipelineIndex == -1))
@@ -5384,7 +5384,7 @@ bool Device::PreCallValidateCreateExecutionGraphPipelinesAMDX(VkDevice device, V
                     }
                 }
             }
-            skip |= ValidateObject(pCreateInfos[index0].layout, kVulkanObjectTypePipelineLayout, false,
+            skip |= ValidateObject(pCreateInfos[index0].layout, kVulkanObjectTypePipelineLayout, true,
                                    "VUID-VkExecutionGraphPipelineCreateInfoAMDX-layout-parameter",
                                    "VUID-VkExecutionGraphPipelineCreateInfoAMDX-commonparent", index0_loc.dot(Field::layout));
             if ((pCreateInfos[index0].flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT) && (pCreateInfos[index0].basePipelineIndex == -1))
@@ -5458,6 +5458,77 @@ bool Device::PreCallValidateCmdInitializeGraphScratchMemoryAMDX(VkCommandBuffer 
 // Checked by chassis: commandBuffer: "VUID-vkCmdDispatchGraphIndirectCountAMDX-commandBuffer-parameter"
 
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+
+bool Device::PreCallValidateWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                                       const VkHostAddressRangeEXT* pDescriptors,
+                                                       const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: device: "VUID-vkWriteSamplerDescriptorsEXT-device-parameter"
+    if (pSamplers) {
+        for (uint32_t index0 = 0; index0 < samplerCount; ++index0) {
+            [[maybe_unused]] const Location index0_loc = error_obj.location.dot(Field::pSamplers, index0);
+            if ([[maybe_unused]] auto pNext = vku::FindStructInPNextChain<VkSamplerYcbcrConversionInfo>(pSamplers[index0].pNext)) {
+                [[maybe_unused]] const Location pNext_loc = index0_loc.pNext(Struct::VkSamplerYcbcrConversionInfo);
+                skip |=
+                    ValidateObject(pNext->conversion, kVulkanObjectTypeSamplerYcbcrConversion, false,
+                                   "VUID-VkSamplerYcbcrConversionInfo-conversion-parameter",
+                                   "UNASSIGNED-VkSamplerYcbcrConversionInfo-conversion-parent", pNext_loc.dot(Field::conversion));
+            }
+        }
+    }
+
+    return skip;
+}
+
+// vkCmdBindSamplerHeapEXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdBindSamplerHeapEXT-commandBuffer-parameter"
+
+// vkCmdBindResourceHeapEXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdBindResourceHeapEXT-commandBuffer-parameter"
+
+// vkCmdPushDataEXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdPushDataEXT-commandBuffer-parameter"
+
+bool Device::PreCallValidateGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                         VkHostAddressRangeEXT* pDatas, const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: device: "VUID-vkGetImageOpaqueCaptureDataEXT-device-parameter"
+
+    if ((imageCount > 0) && (pImages)) {
+        for (uint32_t index0 = 0; index0 < imageCount; ++index0) {
+            skip |= ValidateObject(
+                pImages[index0], kVulkanObjectTypeImage, false, "VUID-vkGetImageOpaqueCaptureDataEXT-pImages-parameter",
+                "VUID-vkGetImageOpaqueCaptureDataEXT-pImages-parent", error_obj.location.dot(Field::pImages, index0));
+        }
+    }
+
+    return skip;
+}
+
+// vkGetPhysicalDeviceDescriptorSizeEXT:
+// Checked by chassis: physicalDevice: "VUID-vkGetPhysicalDeviceDescriptorSizeEXT-physicalDevice-parameter"
+
+// vkRegisterCustomBorderColorEXT:
+// Checked by chassis: device: "VUID-vkRegisterCustomBorderColorEXT-device-parameter"
+
+// vkUnregisterCustomBorderColorEXT:
+// Checked by chassis: device: "VUID-vkUnregisterCustomBorderColorEXT-device-parameter"
+
+bool Device::PreCallValidateGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                          VkHostAddressRangeEXT* pDatas, const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: device: "VUID-vkGetTensorOpaqueCaptureDataARM-device-parameter"
+
+    if ((tensorCount > 0) && (pTensors)) {
+        for (uint32_t index0 = 0; index0 < tensorCount; ++index0) {
+            skip |= ValidateObject(
+                pTensors[index0], kVulkanObjectTypeTensorARM, false, "VUID-vkGetTensorOpaqueCaptureDataARM-pTensors-parameter",
+                "VUID-vkGetTensorOpaqueCaptureDataARM-pTensors-parent", error_obj.location.dot(Field::pTensors, index0));
+        }
+    }
+
+    return skip;
+}
 
 // vkCmdSetSampleLocationsEXT:
 // Checked by chassis: commandBuffer: "VUID-vkCmdSetSampleLocationsEXT-commandBuffer-parameter"
@@ -5773,7 +5844,7 @@ bool Device::PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkPipel
                     }
                 }
             }
-            skip |= ValidateObject(pCreateInfos[index0].layout, kVulkanObjectTypePipelineLayout, false, false,
+            skip |= ValidateObject(pCreateInfos[index0].layout, kVulkanObjectTypePipelineLayout, true, false,
                                    "VUID-VkRayTracingPipelineCreateInfoNV-layout-parameter",
                                    "VUID-VkRayTracingPipelineCreateInfoNV-commonparent", index0_loc.dot(Field::layout));
             if ((pCreateInfos[index0].flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT) && (pCreateInfos[index0].basePipelineIndex == -1))
@@ -7312,7 +7383,7 @@ bool Device::PreCallValidateGetPipelineIndirectMemoryRequirementsNV(VkDevice dev
                                    "UNASSIGNED-VkShaderModuleValidationCacheCreateInfoEXT-validationCache-parent",
                                    pNext_loc.dot(Field::validationCache));
         }
-        skip |= ValidateObject(pCreateInfo->layout, kVulkanObjectTypePipelineLayout, false,
+        skip |= ValidateObject(pCreateInfo->layout, kVulkanObjectTypePipelineLayout, true,
                                "VUID-VkComputePipelineCreateInfo-layout-parameter", "VUID-VkComputePipelineCreateInfo-commonparent",
                                pCreateInfo_loc.dot(Field::layout));
         if ((pCreateInfo->flags & VK_PIPELINE_CREATE_DERIVATIVE_BIT) && (pCreateInfo->basePipelineIndex == -1))

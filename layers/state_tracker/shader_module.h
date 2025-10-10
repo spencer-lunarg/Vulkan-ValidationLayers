@@ -112,6 +112,7 @@ struct DecorationSet : public DecorationBase {
     bool HasAnyBuiltIn() const;
     bool HasInMember(FlagBit flag_bit) const;
     bool AllMemberHave(FlagBit flag_bit) const;
+    bool IsDescriptorSet() const { return set != kInvalidValue && binding != kInvalidValue; }
 };
 
 // Tracking of OpExecutionMode / OpExecutionModeId values
@@ -342,7 +343,6 @@ struct VariableBase {
     const Instruction* debug_global_variable;  // DebugGlobalVariable from NonSemantic.Shader.DebugInfo.100
     // We need to store a std::string since the original SPIR-V string can be gone when we need to print this in an error message
     const std::string debug_name;  // OpName or OpString (empty if no debug info found)
-    std::string DescribeDescriptor() const;
 
     // These are helpers to show how the variable will be STATICALLY accessed.
     // (It would require a lot of GPU-AV overhead to detect if the access is dynamic and that level of fine control is currently not
@@ -449,6 +449,7 @@ struct ResourceInterfaceVariable : public VariableBase {
     // "constant integral expressions" is fancy spec language to mean "you are not doing dynamic descriptor indexing into an array"
     // NOTE - This just checks if there is ANY non-costant access
     bool all_constant_integral_expressions{true};
+    uint32_t non_constant_id{0};
 
     // All info regarding what will be validated from requirements imposed by the pipeline on a descriptor. These
     // can't be checked at pipeline creation time as they depend on the object bound (Image/Tensor) or its view.
@@ -489,6 +490,9 @@ struct ResourceInterfaceVariable : public VariableBase {
     uint64_t descriptor_hash = 0;
     bool IsImage() const { return base_type.Opcode() == spv::OpTypeImage; }
 
+    bool IsHeap() const;
+    std::string DescribeDescriptor() const;
+
     // Type of resource type (vkspec.html#interfaces-resources-storage-class-correspondence)
     bool is_storage_image{false};
     bool is_storage_texel_buffer{false};
@@ -496,6 +500,7 @@ struct ResourceInterfaceVariable : public VariableBase {
     const bool is_uniform_buffer;
     bool is_input_attachment{false};
     bool is_storage_tensor{false};
+    bool is_sampler{false};
 
     ResourceInterfaceVariable(const Module &module_state, const EntryPoint &entrypoint, const Instruction &insn,
                               const ParsedInfo &parsed);
@@ -683,6 +688,7 @@ struct Module {
         std::vector<const Instruction *> cooperative_matrix_inst;
         std::vector<const Instruction *> cooperative_vector_inst;
         std::vector<const Instruction *> emit_mesh_tasks_inst;
+        std::vector<const Instruction *> constant_size_of_inst;
         std::vector<const Instruction *> array_length_inst;
         std::vector<const Instruction *> vector_type_inst;
 

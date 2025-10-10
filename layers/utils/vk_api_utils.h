@@ -2,6 +2,7 @@
  * Copyright (c) 2019-2025 Valve Corporation
  * Copyright (c) 2019-2025 LunarG, Inc.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -168,4 +169,69 @@ static constexpr bool HasFramebufferStagePipelineStageFlags(VkPipelineStageFlags
 
 static constexpr bool HasNonShaderTileImageAccessFlags(VkAccessFlags2 in_flags) {
     return ((in_flags & ~kShaderTileImageAllowedAccessFlags) != 0);
+}
+
+static inline bool IsImageLayoutDepthStencil(VkImageLayout layout) {
+    constexpr std::array ds_layouts = {VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                       VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+    return std::any_of(ds_layouts.begin(), ds_layouts.end(),
+                       [layout](const VkImageLayout ds_layout) { return layout == ds_layout; });
+}
+
+static inline const VkSamplerCreateInfo* GetEmbeddedSampler(VkDescriptorMappingSourceEXT source,
+                                                            const VkDescriptorMappingSourceDataEXT& sourceData) {
+    switch (source) {
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT:
+            return sourceData.constantOffset.pEmbeddedSampler;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT:
+            return sourceData.pushIndex.pEmbeddedSampler;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT:
+            return sourceData.indirectIndex.pEmbeddedSampler;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT:
+            return sourceData.indirectIndexArray.pEmbeddedSampler;
+        case VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT:
+            return sourceData.shaderRecordIndex.pEmbeddedSampler;
+        default:
+            return nullptr;
+    }
+}
+
+static inline size_t CountDescriptorHeapEmbeddedSamplers(const void* pNext) {
+    const VkShaderDescriptorSetAndBindingMappingInfoEXT* mapping_info =
+        vku::FindStructInPNextChain<VkShaderDescriptorSetAndBindingMappingInfoEXT>(pNext);
+    size_t count = 0;
+
+    if (mapping_info) {
+        for (uint32_t i = 0; i < mapping_info->mappingCount; ++i) {
+            const auto& mapping = mapping_info->pMappings[i];
+            const VkSamplerCreateInfo* embedded_sampler = GetEmbeddedSampler(mapping.source, mapping.sourceData);
+            if (embedded_sampler != nullptr) {
+                count++;
+            }
+        }
+    }
+
+    return count;
+}
+
+static constexpr bool IsDescriptorHeapAddr(const VkDescriptorType type) {
+    return (type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR) || (type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV) ||
+           (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) || (type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) ||
+           (type == VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV);
+}
+
+static constexpr bool IsDescriptorHeapTexelBuffer(const VkDescriptorType type) {
+    return (type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER) || (type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER);
+}
+
+static constexpr bool IsDescriptorHeapImage(const VkDescriptorType type) {
+    return (type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) || (type == VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM) ||
+           (type == VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM) || (type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ||
+           (type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT);
 }

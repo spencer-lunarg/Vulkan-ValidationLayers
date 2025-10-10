@@ -5192,6 +5192,127 @@ void Device::PostCallRecordCmdDispatchGraphIndirectCountAMDX(VkCommandBuffer com
 }
 
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+void Device::PreCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                                     const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) {
+    StartReadObjectParentInstance(device, record_obj.location);
+}
+
+void Device::PostCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                                      const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) {
+    FinishReadObjectParentInstance(device, record_obj.location);
+}
+
+void Device::PreCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                      const VkResourceDescriptorInfoEXT* pResources,
+                                                      const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) {
+    StartReadObjectParentInstance(device, record_obj.location);
+}
+
+void Device::PostCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                       const VkResourceDescriptorInfoEXT* pResources,
+                                                       const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) {
+    FinishReadObjectParentInstance(device, record_obj.location);
+}
+
+void Device::PreCallRecordCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                const RecordObject& record_obj) {
+    StartWriteObject(commandBuffer, record_obj.location);
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void Device::PostCallRecordCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                 const RecordObject& record_obj) {
+    FinishWriteObject(commandBuffer, record_obj.location);
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void Device::PreCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                 const RecordObject& record_obj) {
+    StartWriteObject(commandBuffer, record_obj.location);
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void Device::PostCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                                  const RecordObject& record_obj) {
+    FinishWriteObject(commandBuffer, record_obj.location);
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void Device::PreCallRecordCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
+                                         const RecordObject& record_obj) {
+    StartWriteObject(commandBuffer, record_obj.location);
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void Device::PostCallRecordCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
+                                          const RecordObject& record_obj) {
+    FinishWriteObject(commandBuffer, record_obj.location);
+    // Host access to commandBuffer must be externally synchronized
+}
+
+void Device::PreCallRecordGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                       VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {
+    StartReadObjectParentInstance(device, record_obj.location);
+
+    if (pImages) {
+        for (uint32_t index = 0; index < imageCount; index++) {
+            StartReadObject(pImages[index], record_obj.location);
+        }
+    }
+}
+
+void Device::PostCallRecordGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                        VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {
+    FinishReadObjectParentInstance(device, record_obj.location);
+
+    if (pImages) {
+        for (uint32_t index = 0; index < imageCount; index++) {
+            FinishReadObject(pImages[index], record_obj.location);
+        }
+    }
+}
+
+void Device::PreCallRecordRegisterCustomBorderColorEXT(VkDevice device, const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                       VkBool32 requestIndex, uint32_t* pIndex, const RecordObject& record_obj) {
+    StartReadObjectParentInstance(device, record_obj.location);
+}
+
+void Device::PostCallRecordRegisterCustomBorderColorEXT(VkDevice device,
+                                                        const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                        VkBool32 requestIndex, uint32_t* pIndex, const RecordObject& record_obj) {
+    FinishReadObjectParentInstance(device, record_obj.location);
+}
+
+void Device::PreCallRecordUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const RecordObject& record_obj) {
+    StartReadObjectParentInstance(device, record_obj.location);
+}
+
+void Device::PostCallRecordUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const RecordObject& record_obj) {
+    FinishReadObjectParentInstance(device, record_obj.location);
+}
+
+void Device::PreCallRecordGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                        VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {
+    StartReadObjectParentInstance(device, record_obj.location);
+
+    if (pTensors) {
+        for (uint32_t index = 0; index < tensorCount; index++) {
+            StartReadObject(pTensors[index], record_obj.location);
+        }
+    }
+}
+
+void Device::PostCallRecordGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                         VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) {
+    FinishReadObjectParentInstance(device, record_obj.location);
+
+    if (pTensors) {
+        for (uint32_t index = 0; index < tensorCount; index++) {
+            FinishReadObject(pTensors[index], record_obj.location);
+        }
+    }
+}
+
 void Device::PreCallRecordCmdSetSampleLocationsEXT(VkCommandBuffer commandBuffer,
                                                    const VkSampleLocationsInfoEXT* pSampleLocationsInfo,
                                                    const RecordObject& record_obj) {

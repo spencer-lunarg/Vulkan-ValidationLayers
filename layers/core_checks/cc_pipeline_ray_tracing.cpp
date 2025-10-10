@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2026 Valve Corporation
  * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
- * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
+ * Modifications Copyright (C) 2020-2022,2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +59,6 @@ bool CoreChecks::ValidateRayTracingPipeline(const vvl::Pipeline &pipeline,
                                             const Location &create_info_loc) const {
     bool skip = false;
     const bool isKHR = create_info_loc.function == Func::vkCreateRayTracingPipelinesKHR;
-
     const auto *groups = create_info.ptr()->pGroups;
     const VkPipelineCreateFlags2 create_flags = pipeline.create_flags;
 
@@ -190,6 +189,12 @@ bool CoreChecks::PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkP
                                                 create_info_loc.dot(Field::pStages, stage_index++));
         }
 
+        if (pipeline->descriptor_heap_embedded_samplers_count > 0) {
+            skip |= ValidateEmbeddedSamplersCount("VUID-vkCreateRayTracingPipelinesNV-pCreateInfos-11414", create_info_loc);
+            skip |= ValidateEmbeddedSamplersCount("VUID-vkCreateRayTracingPipelinesNV-pCreateInfos-11429",
+                                                  pipeline->descriptor_heap_embedded_samplers_count, create_info_loc);
+        }
+
         if (create_info.maxRecursionDepth > phys_dev_ext_props.ray_tracing_props_nv.maxRecursionDepth) {
             skip |= LogError("VUID-VkRayTracingPipelineCreateInfoNV-maxRecursionDepth-03457", device,
                              create_info_loc.dot(Field::maxRecursionDepth),
@@ -257,6 +262,11 @@ bool CoreChecks::PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, Vk
             }
         }
 
+        if (pipeline->descriptor_heap_embedded_samplers_count > 0) {
+            skip |= ValidateEmbeddedSamplersCount("VUID-vkCreateRayTracingPipelinesKHR-pCreateInfos-11414", create_info_loc);
+            skip |= ValidateEmbeddedSamplersCount("VUID-vkCreateRayTracingPipelinesKHR-pCreateInfos-11429",
+                                                  pipeline->descriptor_heap_embedded_samplers_count, create_info_loc);
+        }
         if (create_info.maxPipelineRayRecursionDepth > phys_dev_ext_props.ray_tracing_props_khr.maxRayRecursionDepth) {
             skip |=
                 LogError("VUID-VkRayTracingPipelineCreateInfoKHR-maxPipelineRayRecursionDepth-03589", device,
@@ -297,6 +307,7 @@ bool CoreChecks::ValidateRayTracingPipelineLibrary(const vvl::Pipeline &pipeline
     const VkPipelineCreateFlags2 pipeline_create_flags = pipeline.create_flags;
     const Location flags_loc = pipeline.GetCreateFlagsLoc(create_info_loc);
     const Location library_info_loc = create_info_loc.dot(Field::pLibraryInfo);
+    const bool has_desc_heap_flags = pipeline.create_flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
 
     for (uint32_t i = 0; i < library_create_info.libraryCount; i++) {
         const Location library_loc = library_info_loc.dot(Field::pLibraries, i);
@@ -319,7 +330,25 @@ bool CoreChecks::ValidateRayTracingPipelineLibrary(const vvl::Pipeline &pipeline
                 }
             }
         }
-
+        const VkPipelineCreateFlagBits2 library_create_info_flags = lib->create_flags;
+        const bool lib_has_desc_heap_flags = library_create_info_flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+        if (has_desc_heap_flags != lib_has_desc_heap_flags) {
+            if (has_desc_heap_flags) {
+                skip |= LogError("VUID-VkRayTracingPipelineCreateInfoKHR-flags-11275", device, library_loc,
+                                 "was created with %s, which is missing "
+                                 "VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT included in %s (%s).",
+                                 string_VkPipelineCreateFlags2(pipeline.create_flags).c_str(),
+                                 create_info_loc.dot(Field::flags).Fields().c_str(),
+                                 string_VkPipelineCreateFlags2(library_create_info_flags).c_str());
+            } else {
+                skip |= LogError("VUID-VkRayTracingPipelineCreateInfoKHR-flags-11276", device, library_loc,
+                                 "was created without %s, which is missing "
+                                 "VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT included in %s (%s).",
+                                 string_VkPipelineCreateFlags2(pipeline.create_flags).c_str(),
+                                 create_info_loc.dot(Field::flags).Fields().c_str(),
+                                 string_VkPipelineCreateFlags2(library_create_info_flags).c_str());
+            }
+        }
         if (i == 0) {
             uses_descriptor_buffer = lib->descriptor_buffer_mode;
         } else if (uses_descriptor_buffer != lib->descriptor_buffer_mode) {

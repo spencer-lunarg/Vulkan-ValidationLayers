@@ -932,6 +932,27 @@ bool PreCallValidateCmdDispatchGraphIndirectCountAMDX(VkCommandBuffer commandBuf
                                                       VkDeviceSize scratchSize, VkDeviceAddress countInfo,
                                                       const ErrorObject& error_obj) const override;
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+bool PreCallValidateWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                               const VkHostAddressRangeEXT* pDescriptors,
+                                               const ErrorObject& error_obj) const override;
+bool PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                const VkResourceDescriptorInfoEXT* pResources,
+                                                const VkHostAddressRangeEXT* pDescriptors,
+                                                const ErrorObject& error_obj) const override;
+bool PreCallValidateCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                          const ErrorObject& error_obj) const override;
+bool PreCallValidateCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                           const ErrorObject& error_obj) const override;
+bool PreCallValidateCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
+                                   const ErrorObject& error_obj) const override;
+bool PreCallValidateGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                 VkHostAddressRangeEXT* pDatas, const ErrorObject& error_obj) const override;
+bool PreCallValidateRegisterCustomBorderColorEXT(VkDevice device, const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                 VkBool32 requestIndex, uint32_t* pIndex,
+                                                 const ErrorObject& error_obj) const override;
+bool PreCallValidateUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const ErrorObject& error_obj) const override;
+bool PreCallValidateGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                  VkHostAddressRangeEXT* pDatas, const ErrorObject& error_obj) const override;
 bool PreCallValidateCmdSetSampleLocationsEXT(VkCommandBuffer commandBuffer, const VkSampleLocationsInfoEXT* pSampleLocationsInfo,
                                              const ErrorObject& error_obj) const override;
 bool PreCallValidateGetImageDrmFormatModifierPropertiesEXT(VkDevice device, VkImage image,

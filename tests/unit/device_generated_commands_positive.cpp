@@ -181,6 +181,35 @@ TEST_F(PositiveDeviceGeneratedCommands, PushConstant) {
     vkt::IndirectCommandsLayout command_layout(*m_device, command_layout_ci);
 }
 
+TEST_F(PositiveDeviceGeneratedCommands, PushData) {
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    RETURN_IF_SKIP(InitBasicDeviceGeneratedCommands());
+
+    VkIndirectCommandsPushConstantTokenEXT pc_token;
+    pc_token.updateRange = {VK_SHADER_STAGE_ALL, 8, 8};
+
+    VkIndirectCommandsLayoutTokenEXT tokens[2];
+    tokens[0] = vku::InitStructHelper();
+    tokens[0].type = VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_DATA_EXT;
+    tokens[0].data.pPushConstant = &pc_token;
+    tokens[0].offset = 0;
+
+    tokens[1] = vku::InitStructHelper();
+    tokens[1].type = VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_EXT;
+    tokens[1].offset = 8;
+
+    const std::vector<VkPushConstantRange> pc_range = {{VK_SHADER_STAGE_VERTEX_BIT, 4, 12}};
+    vkt::PipelineLayout pipeline_layout(*m_device, {}, pc_range);
+    VkIndirectCommandsLayoutCreateInfoEXT command_layout_ci = vku::InitStructHelper();
+    command_layout_ci.shaderStages = VK_SHADER_STAGE_VERTEX_BIT;
+    command_layout_ci.pipelineLayout = pipeline_layout;
+    command_layout_ci.tokenCount = 2;
+    command_layout_ci.pTokens = tokens;
+
+    vkt::IndirectCommandsLayout command_layout(*m_device, command_layout_ci);
+}
+
 TEST_F(PositiveDeviceGeneratedCommands, CmdExecuteGeneratedCommandsGraphics) {
     RETURN_IF_SKIP(InitBasicDeviceGeneratedCommands());
     InitRenderTarget();
@@ -574,4 +603,32 @@ TEST_F(PositiveDeviceGeneratedCommands, PushConstantMultipleRanges) {
     command_layout_ci.pTokens = tokens;
 
     vkt::IndirectCommandsLayout command_layout(*m_device, command_layout_ci);
+}
+
+TEST_F(PositiveDeviceGeneratedCommands, IndirectCommandsLayoutDescriptorHeap) {
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    RETURN_IF_SKIP(InitBasicDeviceGeneratedCommands());
+
+    VkIndirectCommandsPushConstantTokenEXT pc_token;
+    pc_token.updateRange = {VK_SHADER_STAGE_ALL, 4, 8};
+
+    VkIndirectCommandsLayoutTokenEXT tokens[2];
+    tokens[0] = vku::InitStructHelper();
+    tokens[0].type = VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_DATA_EXT;
+    tokens[0].data.pPushConstant = &pc_token;
+    tokens[0].offset = 0;
+
+    tokens[1] = vku::InitStructHelper();
+    tokens[1].type = VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_EXT;
+    tokens[1].offset = 8;
+
+    VkIndirectCommandsLayoutCreateInfoEXT command_layout_ci = vku::InitStructHelper();
+    command_layout_ci.shaderStages = VK_SHADER_STAGE_VERTEX_BIT;
+    command_layout_ci.tokenCount = 2;
+    command_layout_ci.pTokens = tokens;
+
+    VkIndirectCommandsLayoutEXT command_layout;
+    vk::CreateIndirectCommandsLayoutEXT(device(), &command_layout_ci, nullptr, &command_layout);
+    vk::DestroyIndirectCommandsLayoutEXT(device(), command_layout, nullptr);
 }

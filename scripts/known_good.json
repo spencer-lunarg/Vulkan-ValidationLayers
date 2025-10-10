@@ -3,19 +3,19 @@
         {
             "name": "Vulkan-Headers",
             "api": "vulkan",
-            "url": "https://github.com/KhronosGroup/Vulkan-Headers.git",
+            "url": "git@gitlab.khronos.org:vulkan/Vulkan-Headers.git",
             "sub_dir": "Vulkan-Headers",
             "build_dir": "Vulkan-Headers/build",
             "install_dir": "Vulkan-Headers/build/install",
-            "commit": "v1.4.339"
+            "commit": "f9a564aaf3d08574673429f11b495b813391d2a4"
         },
         {
             "name": "Vulkan-Utility-Libraries",
-            "url": "https://github.com/KhronosGroup/Vulkan-Utility-Libraries.git",
+            "url": "git@gitlab.khronos.org:vulkan/Vulkan-Utility-Libraries.git",
             "sub_dir": "Vulkan-Utility-Libraries",
             "build_dir": "Vulkan-Utility-Libraries/build",
             "install_dir": "Vulkan-Utility-Libraries/build/install",
-            "commit": "v1.4.339",
+            "commit": "94f37bd5eeacd99b34be7431378b5d0a798ad20a",
             "deps": [
                 {
                     "var_name": "VULKAN_HEADERS_INSTALL_DIR",
@@ -25,15 +25,15 @@
         },
         {
             "name": "SPIRV-Headers",
-            "url": "https://github.com/KhronosGroup/SPIRV-Headers.git",
+            "url": "git@gitlab.khronos.org:spirv/SPIRV-Headers.git",
             "sub_dir": "SPIRV-Headers",
             "build_dir": "SPIRV-Headers/build",
             "install_dir": "SPIRV-Headers/build/install",
-            "commit": "babee77020ff82b571d723ce2c0262e2ec0ee3f1"
+            "commit": "1f915bf619ae51e051d0238d2d32806fafcd762c"
         },
         {
             "name": "SPIRV-Tools",
-            "url": "https://github.com/KhronosGroup/SPIRV-Tools.git",
+            "url": "git@gitlab.khronos.org:spirv/spirv-tools.git",
             "sub_dir": "SPIRV-Tools",
             "build_dir": "SPIRV-Tools/build",
             "install_dir": "SPIRV-Tools/build/install",
@@ -43,7 +43,7 @@
                 "-DSPIRV_SKIP_TESTS=ON",
                 "-DSPIRV_SKIP_EXECUTABLES=OFF"
             ],
-            "commit": "a1eace9772ea3b5f727359db14305baeaf16a7d7"
+            "commit": "6e04d85321b3dfc0a29d1333f9d5d20670d8a122"
         },
         {
             "name": "mimalloc",
@@ -80,11 +80,11 @@
         },
         {
             "name": "glslang",
-            "url": "https://github.com/KhronosGroup/glslang.git",
+            "url": "git@gitlab.khronos.org:GLSL/glslang.git",
             "sub_dir": "glslang",
             "build_dir": "glslang/build",
             "install_dir": "glslang/build/install",
-            "commit": "b937eae5e2ae1e29efe8f8775feaa434239806d2",
+            "commit": "39eb109bfe2b865999baaccebda9c948d028566d",
             "cmake_options": [
                 "-DENABLE_OPT=OFF"
             ],
@@ -95,11 +95,11 @@
         {
             "name": "Vulkan-Loader",
             "api": "vulkan",
-            "url": "https://github.com/KhronosGroup/Vulkan-Loader.git",
+            "url": "git@gitlab.khronos.org:vulkan/Vulkan-Loader.git",
             "sub_dir": "Vulkan-Loader",
             "build_dir": "Vulkan-Loader/build",
             "install_dir": "Vulkan-Loader/build/install",
-            "commit": "v1.4.339",
+            "commit": "97322e2e7421f6c7289f1f1146b2f051317fd174",
             "build_step": "skip",
             "optional": [
                 "tests"

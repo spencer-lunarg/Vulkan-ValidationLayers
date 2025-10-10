@@ -34,6 +34,7 @@
 #include <vulkan/vulkan_core.h>
 #include "error_message/spirv_logging.h"
 #include "utils/math_utils.h"
+#include "containers/container_utils.h"
 
 namespace spirv {
 
@@ -1209,11 +1210,12 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
             case spv::OpTypeVector:
                 vector_type_inst.push_back(&insn);
                 break;
-
-            case spv::OpEmitMeshTasksEXT: {
+            case spv::OpEmitMeshTasksEXT:
                 emit_mesh_tasks_inst.push_back(&insn);
                 break;
-            }
+            case spv::OpConstantSizeOfEXT:
+                constant_size_of_inst.push_back(&insn);
+                break;
 
             case spv::OpExtInst: {
                 const uint32_t set = insn.Word(3);
@@ -1972,9 +1974,14 @@ VariableBase::VariableBase(const Module& module_state, const Instruction& insn, 
     }
 }
 
-std::string VariableBase::DescribeDescriptor() const {
+std::string ResourceInterfaceVariable::DescribeDescriptor() const {
     std::ostringstream ss;
-    ss << "[Set " << decorations.set << ", Binding " << decorations.binding;
+    if (!IsHeap()) {
+        ss << "[Set " << decorations.set << ", Binding " << decorations.binding;
+    } else {
+        // TODO - print if Resource or Sampler heap
+        ss << "[Heap";
+    }
     if (!debug_name.empty()) {
         ss << ", variable \"" << debug_name << "\"";
     }
@@ -2274,6 +2281,13 @@ StageInterfaceVariable::StageInterfaceVariable(const Module& module_state, const
       built_in_block(GetBuiltInBlock(*this, module_state)),
       total_built_in_components(GetBuiltInComponents(*this, module_state)) {}
 
+bool ResourceInterfaceVariable::IsHeap() const {
+    // It is only legal to not have a set/binding for descriptors if they are the heap
+    // We might one day want to know which heap it is, and could just check for |ResourceHeapEXT| or |SamplerHeapEXT| but that will
+    // for sure require more testing
+    return decorations.set == kInvalidValue || decorations.binding == kInvalidValue;
+}
+
 const Instruction& ResourceInterfaceVariable::FindBaseType(ResourceInterfaceVariable& variable, const Module& module_state) {
     // Takes a OpVariable and looks at the the descriptor type it uses. This will find things such as if the variable is writable,
     // image atomic operation, matching images to samplers, etc
@@ -2435,6 +2449,29 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
         info.bit_width = (uint8_t)module_state.GetTypeBitsSize(&base_type);
         info.vk_format = GetTensorFormat(info.numeric_type, info.bit_width);
         info.tensor_rank = module_state.GetConstantValueById(base_type.Word(3));
+    } else if (base_type.Opcode() == spv::OpTypeSampler) {
+        is_sampler = true;
+    }
+
+    for (const auto& accessible_id : entrypoint.accessible_ids) {
+        const Instruction* pointer = module_state.FindDef(accessible_id);
+        if (pointer->IsAccessChain()) {
+            const spirv::Instruction* base = module_state.FindDef(pointer->Word(3));
+            if (base->Opcode() == spv::OpVariable && type_id == base->Word(1)) {
+                const spirv::Instruction* base_pointer = module_state.FindDef(base->Word(1));
+                const spirv::Instruction* base_type = module_state.FindDef(base_pointer->Word(3));
+                if (base_type->IsArray()) {
+                    // Taking only the first index (word 4) as that one is used to access arrays of descriptors
+                    const spirv::Instruction* access_op = module_state.FindDef(pointer->Word(4));
+                    const auto access_opcode = (spv::Op)access_op->Opcode();
+                    if (!IsValueIn(access_opcode, {spv::OpConstant, spv::OpSpecConstant, spv::OpConstantComposite})) {
+                        all_constant_integral_expressions = false;
+                        non_constant_id = accessible_id;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     info.access_mask = access_mask;

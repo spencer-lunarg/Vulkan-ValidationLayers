@@ -141,6 +141,7 @@ typedef struct VkLayerInstanceDispatchTable_ {
     PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessengerEXT;
     PFN_vkDestroyDebugUtilsMessengerEXT DestroyDebugUtilsMessengerEXT;
     PFN_vkSubmitDebugUtilsMessageEXT SubmitDebugUtilsMessageEXT;
+    PFN_vkGetPhysicalDeviceDescriptorSizeEXT GetPhysicalDeviceDescriptorSizeEXT;
     PFN_vkGetPhysicalDeviceMultisamplePropertiesEXT GetPhysicalDeviceMultisamplePropertiesEXT;
     PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT GetPhysicalDeviceCalibrateableTimeDomainsEXT;
 #ifdef VK_USE_PLATFORM_FUCHSIA
@@ -578,6 +579,15 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkCmdDispatchGraphIndirectAMDX CmdDispatchGraphIndirectAMDX;
     PFN_vkCmdDispatchGraphIndirectCountAMDX CmdDispatchGraphIndirectCountAMDX;
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+    PFN_vkWriteSamplerDescriptorsEXT WriteSamplerDescriptorsEXT;
+    PFN_vkWriteResourceDescriptorsEXT WriteResourceDescriptorsEXT;
+    PFN_vkCmdBindSamplerHeapEXT CmdBindSamplerHeapEXT;
+    PFN_vkCmdBindResourceHeapEXT CmdBindResourceHeapEXT;
+    PFN_vkCmdPushDataEXT CmdPushDataEXT;
+    PFN_vkGetImageOpaqueCaptureDataEXT GetImageOpaqueCaptureDataEXT;
+    PFN_vkRegisterCustomBorderColorEXT RegisterCustomBorderColorEXT;
+    PFN_vkUnregisterCustomBorderColorEXT UnregisterCustomBorderColorEXT;
+    PFN_vkGetTensorOpaqueCaptureDataARM GetTensorOpaqueCaptureDataARM;
     PFN_vkCmdSetSampleLocationsEXT CmdSetSampleLocationsEXT;
     PFN_vkGetImageDrmFormatModifierPropertiesEXT GetImageDrmFormatModifierPropertiesEXT;
     PFN_vkCreateValidationCacheEXT CreateValidationCacheEXT;

@@ -496,6 +496,22 @@ void PostCallRecordGetExecutionGraphPipelineNodeIndexAMDX(VkDevice device, VkPip
                                                           uint32_t* pNodeIndex, const RecordObject& record_obj) override;
 
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+void PostCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                              const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) override;
+
+void PostCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                               const VkResourceDescriptorInfoEXT* pResources,
+                                               const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj) override;
+
+void PostCallRecordGetImageOpaqueCaptureDataEXT(VkDevice device, uint32_t imageCount, const VkImage* pImages,
+                                                VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) override;
+
+void PostCallRecordRegisterCustomBorderColorEXT(VkDevice device, const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                VkBool32 requestIndex, uint32_t* pIndex, const RecordObject& record_obj) override;
+
+void PostCallRecordGetTensorOpaqueCaptureDataARM(VkDevice device, uint32_t tensorCount, const VkTensorARM* pTensors,
+                                                 VkHostAddressRangeEXT* pDatas, const RecordObject& record_obj) override;
+
 void PostCallRecordGetImageDrmFormatModifierPropertiesEXT(VkDevice device, VkImage image,
                                                           VkImageDrmFormatModifierPropertiesEXT* pProperties,
                                                           const RecordObject& record_obj) override;

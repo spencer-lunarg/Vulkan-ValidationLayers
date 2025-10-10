@@ -24,7 +24,7 @@
 #include "command_validation.h"
 #include "containers/custom_containers.h"
 
-extern const char *kVUIDUndefined;
+extern const char* kVUIDUndefined;
 
 using Func = vvl::Func;
 // clang-format off
@@ -1434,6 +1434,33 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     "VUID-vkCmdDispatchGraphIndirectCountAMDX-suspended",
     false, true, false,
 }},
+{Func::vkCmdBindSamplerHeapEXT, {
+    "VUID-vkCmdBindSamplerHeapEXT-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindSamplerHeapEXT-commandBuffer-cmdpool",
+    CommandScope::Both, kVUIDUndefined,
+    CommandScope::Outside, "VUID-vkCmdBindSamplerHeapEXT-videocoding",
+    kVUIDUndefined,
+    true, false, false,
+}},
+{Func::vkCmdBindResourceHeapEXT, {
+    "VUID-vkCmdBindResourceHeapEXT-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindResourceHeapEXT-commandBuffer-cmdpool",
+    CommandScope::Both, kVUIDUndefined,
+    CommandScope::Outside, "VUID-vkCmdBindResourceHeapEXT-videocoding",
+    kVUIDUndefined,
+    true, false, false,
+}},
+{Func::vkCmdPushDataEXT, {
+    "VUID-vkCmdPushDataEXT-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdPushDataEXT-commandBuffer-cmdpool",
+    CommandScope::Both, kVUIDUndefined,
+    CommandScope::Outside, "VUID-vkCmdPushDataEXT-videocoding",
+    kVUIDUndefined,
+    true, false, false,
+}},
 {Func::vkCmdSetSampleLocationsEXT, {
     "VUID-vkCmdSetSampleLocationsEXT-commandBuffer-recording",
     nullptr,
@@ -2582,7 +2609,7 @@ return kCommandValidationTable;
 }
 // clang-format on
 
-const CommandValidationInfo &GetCommandValidationInfo(vvl::Func command) {
+const CommandValidationInfo& GetCommandValidationInfo(vvl::Func command) {
     auto info_it = GetCommandValidationTable().find(command);
     assert(info_it != GetCommandValidationTable().end());
     return info_it->second;

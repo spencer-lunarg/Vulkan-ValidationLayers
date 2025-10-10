@@ -2,7 +2,7 @@
  * Copyright (c) 2015-2025 Valve Corporation
  * Copyright (c) 2015-2025 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
- * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
+ * Modifications Copyright (C) 2020,2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -138,11 +138,14 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
 
     const VkPrimitiveTopology topology_at_rasterizer = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
     const bool descriptor_buffer_mode = false;
+    const bool descriptor_heap_mode = false;
     const bool uses_pipeline_robustness = false;
     const bool uses_pipeline_vertex_robustness = false;
     bool ignore_color_attachments = true;
 
     mutable bool binary_data_released = false;
+
+    size_t descriptor_heap_embedded_samplers_count = {0};
 
     // TODO - Because we have hack to create a pipeline at PreCallValidate time (for GPL) we have no proper way to create inherited
     // state objects of the pipeline This is to make it clear that while currently everyone has to allocate this memory, it is only
@@ -586,6 +589,7 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
         // Signal that the custom initialization was not used
         return false;
     }
+    static size_t CountDescriptorHeapEmbeddedSamplers(const Pipeline& pipe_state);
 
   protected:
     static std::shared_ptr<VertexInputState> CreateVertexInputState(const Pipeline &p, const DeviceState &state,

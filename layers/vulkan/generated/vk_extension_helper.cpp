@@ -225,6 +225,7 @@ vvl::Extension GetExtension(std::string extension) {
         {"VK_EXT_sampler_filter_minmax", vvl::Extension::_VK_EXT_sampler_filter_minmax},
         {"VK_AMD_gpu_shader_int16", vvl::Extension::_VK_AMD_gpu_shader_int16},
         {"VK_AMDX_shader_enqueue", vvl::Extension::_VK_AMDX_shader_enqueue},
+        {"VK_EXT_descriptor_heap", vvl::Extension::_VK_EXT_descriptor_heap},
         {"VK_AMD_mixed_attachment_samples", vvl::Extension::_VK_AMD_mixed_attachment_samples},
         {"VK_AMD_shader_fragment_mask", vvl::Extension::_VK_AMD_shader_fragment_mask},
         {"VK_EXT_inline_uniform_block", vvl::Extension::_VK_EXT_inline_uniform_block},
@@ -1374,6 +1375,10 @@ static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
                 {&DeviceExtensions::vk_khr_maintenance5, VK_KHR_MAINTENANCE_5_EXTENSION_NAME},
                 {&DeviceExtensions::vk_khr_pipeline_library, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME}}})},
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+        {vvl::Extension::_VK_EXT_descriptor_heap,
+         Info(&DeviceExtensions::vk_ext_descriptor_heap,
+              {{{&DeviceExtensions::vk_khr_maintenance5, VK_KHR_MAINTENANCE_5_EXTENSION_NAME},
+                {&DeviceExtensions::vk_khr_buffer_device_address, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME}}})},
         {vvl::Extension::_VK_AMD_mixed_attachment_samples, Info(&DeviceExtensions::vk_amd_mixed_attachment_samples, {})},
         {vvl::Extension::_VK_AMD_shader_fragment_mask, Info(&DeviceExtensions::vk_amd_shader_fragment_mask, {})},
         {vvl::Extension::_VK_EXT_inline_uniform_block,

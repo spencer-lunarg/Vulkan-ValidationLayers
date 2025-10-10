@@ -20,6 +20,7 @@
 #include "shader_utils.h"
 
 #include "generated/spirv_tools_commit_id.h"
+#include "state_tracker/shader_module.h"
 
 #include <cstring>
 #include <fstream>
@@ -114,4 +115,56 @@ void ValidationCache::Merge(ValidationCache const *other) {
 void DumpSpirvToFile(const std::string &file_path, const uint32_t *spirv, size_t spirv_dwords_count) {
     std::ofstream debug_file(file_path, std::ios::out | std::ios::binary);
     debug_file.write(reinterpret_cast<const char *>(spirv), spirv_dwords_count * sizeof(uint32_t));
+}
+
+bool ResourceTypeMatchesBinding(VkSpirvResourceTypeFlagsEXT resource_type,
+                                const spirv::ResourceInterfaceVariable& resource_interface_variable) {
+    if (resource_type == VK_SPIRV_RESOURCE_TYPE_ALL_EXT) {
+        return true;
+    }
+
+    const uint32_t opcode = resource_interface_variable.base_type.Opcode();
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_SAMPLER_BIT_EXT) != 0 && opcode == spv::OpTypeSampler) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_SAMPLED_IMAGE_BIT_EXT) != 0 && opcode == spv::OpTypeImage &&
+        resource_interface_variable.base_type.Word(7) == 1) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_ONLY_IMAGE_BIT_EXT) != 0 && opcode == spv::OpTypeImage &&
+        resource_interface_variable.base_type.Word(7) == 2 &&
+        resource_interface_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_WRITE_IMAGE_BIT_EXT) != 0 && opcode == spv::OpTypeImage &&
+        resource_interface_variable.base_type.Word(7) == 2 &&
+        !resource_interface_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_COMBINED_SAMPLED_IMAGE_BIT_EXT) != 0 &&
+        resource_interface_variable.is_type_sampled_image) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_UNIFORM_BUFFER_BIT_EXT) != 0 && resource_interface_variable.is_uniform_buffer) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_ONLY_STORAGE_BUFFER_BIT_EXT) != 0 &&
+        resource_interface_variable.is_storage_buffer &&
+        resource_interface_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_READ_WRITE_STORAGE_BUFFER_BIT_EXT) != 0 &&
+        resource_interface_variable.is_storage_buffer &&
+        !resource_interface_variable.decorations.Has(spirv::DecorationSet::nonwritable_bit)) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_ACCELERATION_STRUCTURE_BIT_EXT) != 0 &&
+        opcode == spv::OpTypeAccelerationStructureKHR) {
+        return true;
+    }
+    if ((resource_type & VK_SPIRV_RESOURCE_TYPE_TENSOR_BIT_ARM) != 0 && opcode == spv::OpTypeTensorARM) {
+        return true;
+    }
+
+    return false;
 }

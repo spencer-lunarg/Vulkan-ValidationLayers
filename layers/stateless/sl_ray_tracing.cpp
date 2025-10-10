@@ -2,6 +2,7 @@
  * Copyright (c) 2015-2026 Valve Corporation
  * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
+ * Modifications Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -442,7 +443,14 @@ bool Device::manual_PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, 
             }
         }
 
-        skip |= ValidatePipelineBinaryInfo(create_info.pNext, create_info.flags, pipelineCache, create_info_loc);
+        if ((flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT) == 0 && create_info.layout == VK_NULL_HANDLE) {
+            skip |= LogError("VUID-VkRayTracingPipelineCreateInfoNV-None-11368", device, create_info_loc.dot(Field::layout),
+                             "(%s) includes VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT while layout is not VK_NULL_HANDLE (%s).",
+                             string_VkPipelineCreateFlags2(flags).c_str(), FormatHandle(create_info.layout).c_str());
+        }
+
+        skip |=
+            ValidatePipelineBinaryInfo(create_info.pNext, create_info.flags, pipelineCache, create_info.layout, create_info_loc);
     }
 
     return skip;
@@ -676,7 +684,14 @@ bool Device::manual_PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device,
             }
         }
 
-        skip |= ValidatePipelineBinaryInfo(create_info.pNext, create_info.flags, pipelineCache, create_info_loc);
+        if ((flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT) == 0 && create_info.layout == VK_NULL_HANDLE) {
+            skip |= LogError("VUID-VkRayTracingPipelineCreateInfoKHR-None-11369", device, create_info_loc.dot(Field::layout),
+                             "(%s) does not includes VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT but layout is VK_NULL_HANDLE.",
+                             string_VkPipelineCreateFlags2(flags).c_str());
+        }
+
+        skip |=
+            ValidatePipelineBinaryInfo(create_info.pNext, create_info.flags, pipelineCache, create_info.layout, create_info_loc);
     }
 
     return skip;

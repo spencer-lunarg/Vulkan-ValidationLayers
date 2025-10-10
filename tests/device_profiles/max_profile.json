@@ -83,6 +83,10 @@
                 "VkPhysicalDeviceCustomResolveFeaturesEXT": {
                     "customResolve": true
                 },
+                "VkPhysicalDeviceDescriptorHeapFeaturesEXT": {
+                    "descriptorHeap": true,
+                    "descriptorHeapCaptureReplay": true
+                },
                 "VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV": {
                     "deviceGeneratedCommands": true
                 },
@@ -2338,6 +2342,7 @@
                 "VK_EXT_depth_clip_enable": 1,
                 "VK_EXT_depth_range_unrestricted": 1,
                 "VK_EXT_descriptor_buffer": 1,
+                "VK_EXT_descriptor_heap": 1,
                 "VK_EXT_descriptor_indexing": 1,
                 "VK_EXT_device_address_binding_report": 1,
                 "VK_EXT_device_fault": 1,

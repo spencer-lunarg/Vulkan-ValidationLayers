@@ -3,6 +3,7 @@
  * Copyright (c) 2015-2025 The Khronos Group Inc.
  * Copyright (c) 2015-2025 Valve Corporation
  * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +20,7 @@
 
 #include "chassis/dispatch_object.h"
 #include <vulkan/utility/vk_safe_struct.hpp>
+#include "generated/vk_extension_helper.h"
 #include "state_tracker/pipeline_state.h"
 #include "containers/small_vector.h"
 #include "generated/dispatch_functions.h"
@@ -471,6 +473,12 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_khr_maintenance10,
                                              &phys_dev_ext_props.maintenance10_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_arm_tensors, &phys_dev_ext_props.tensor_properties);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_descriptor_heap,
+                                             &phys_dev_ext_props.descriptor_heap_props);
+    if (IsExtEnabled(extensions.vk_arm_tensors)) {
+        instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_descriptor_heap,
+                                                 &phys_dev_ext_props.descriptor_heap_tensor_props);
+    }
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_android_external_format_resolve,
                                              &phys_dev_ext_props.android_format_resolve_props);
@@ -2284,6 +2292,39 @@ void Device::GetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT *pDe
     }
 
     device_dispatch_table.GetDescriptorEXT(device, (const VkDescriptorGetInfoEXT *)&local_pDescriptorInfo, dataSize, pDescriptor);
+}
+
+VkResult Device::WriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount, const VkResourceDescriptorInfoEXT* pResources,
+                                             const VkHostAddressRangeEXT* pDescriptors) {
+    if (!wrap_handles || resourceCount == 0)
+        return device_dispatch_table.WriteResourceDescriptorsEXT(device, resourceCount, pResources, pDescriptors);
+    // When using a union of pointer we still need to unwrap the handles, but since it is a pointer, we can just use the pointer
+    // from the incoming parameter instead of using safe structs as it is less complex doing it here
+    std::vector<vku::safe_VkResourceDescriptorInfoEXT> local_pResources(resourceCount);
+    std::vector<vku::safe_VkImageDescriptorInfoEXT> local_image;
+    local_image.reserve(resourceCount);
+
+    for (uint32_t i = 0; i < resourceCount; i++) {
+        auto& local_pResource = local_pResources[i];
+        local_pResource.initialize(&pResources[i]);
+        if (IsDescriptorHeapImage(local_pResource.type)) {
+            if (local_pResource.data.pImage) {
+                local_image.emplace_back(pResources[i].data.pImage);
+                local_image.back().initialize(pResources[i].data.pImage);
+                local_pResource.data.pImage = local_image.back().ptr();
+                if (local_pResource.data.pImage->pView) {
+                    if (pResources[i].data.pImage->pView->image) {
+                        local_image.back().pView->image = Unwrap(pResources[i].data.pImage->pView->image);
+                    }
+                    if (pResources[i].data.pImage->pView->pNext) {
+                        UnwrapPnextChainHandles(local_pResources[i].data.pImage->pView->pNext);
+                    }
+                }
+            }
+        }
+    }
+
+    return device_dispatch_table.WriteResourceDescriptorsEXT(device, resourceCount, local_pResources[0].ptr(), pDescriptors);
 }
 
 VkResult Device::CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,

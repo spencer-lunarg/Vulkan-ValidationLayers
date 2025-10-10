@@ -991,16 +991,21 @@ vvl::DescriptorMode LastBound::GetActionDescriptorMode() const {
         return descriptor_mode;  // Most common case
     }
 
-    // This is only needed  at draw/dispatch time when there is a chance there is not bound descriptor, but can still find from a
+    // This is only needed at draw/dispatch time when there is a chance there is not bound descriptor, but can still find from a
     // pipeline/layout
     if (pipeline_state) {
-        if (pipeline_state->create_flags & VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
+        if (pipeline_state->descriptor_buffer_mode) {
             return vvl::DescriptorModeBuffer;
+        } else if (pipeline_state->descriptor_heap_mode) {
+            return vvl::DescriptorModeHeap;
         } else {
             return vvl::DescriptorModeClassic;
         }
     } else {
         // Shader Object
+        if (GetFirstShader() && GetFirstShader()->descriptor_heap_mode) {
+            return vvl::DescriptorModeHeap;
+        }
         if (desc_set_pipeline_layout) {
             for (uint32_t i = 0; i < desc_set_pipeline_layout->set_layouts.list.size(); i++) {
                 if (const auto set_layout_state = desc_set_pipeline_layout->set_layouts.list[i]) {

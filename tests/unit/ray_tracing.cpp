@@ -5602,3 +5602,38 @@ TEST_F(NegativeRayTracing, CmdBuildClusterAccelerationStructureIndirectValidatio
 
     vk::DestroyPipeline(device(), raytracing_pipeline, nullptr);
 }
+
+TEST_F(NegativeRayTracing, WriteResourceAccelerationStructure) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    RETURN_IF_SKIP(InitFrameworkForRayTracingTest());
+    RETURN_IF_SKIP(InitState());
+
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(heap_props);
+
+    const VkDeviceSize descriptor_size =
+        vk::GetPhysicalDeviceDescriptorSizeEXT(gpu_, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    std::vector<uint8_t> data(descriptor_size);
+
+    vkt::Buffer buffer(*m_device, 256, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, vkt::device_address);
+
+    VkDeviceAddressRangeEXT device_address_range;
+    device_address_range.address = buffer.Address();
+    device_address_range.size = 256;
+
+    VkResourceDescriptorInfoEXT resource_info = vku::InitStructHelper();
+    resource_info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    resource_info.data.pAddressRange = &device_address_range;
+
+    VkHostAddressRangeEXT descriptor;
+    descriptor.address = data.data();
+    descriptor.size = descriptor_size;
+    m_errorMonitor->SetDesiredError("VUID-VkResourceDescriptorInfoEXT-type-11465");
+    vk::WriteResourceDescriptorsEXT(*m_device, 1u, &resource_info, &descriptor);
+    m_errorMonitor->VerifyFound();
+}
