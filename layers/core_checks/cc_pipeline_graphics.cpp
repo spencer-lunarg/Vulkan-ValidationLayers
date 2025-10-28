@@ -2102,9 +2102,8 @@ bool CoreChecks::ValidateSampleLocationsInfo(const VkSampleLocationsInfoEXT &sam
     if (sample_location_info.sampleLocationsCount != sample_total_size) {
         skip |= LogError("VUID-VkSampleLocationsInfoEXT-sampleLocationsCount-01527", device, loc.dot(Field::sampleLocationsCount),
                          "(%" PRIu32
-                         ") must equal grid width * grid height * pixel "
-                         "sample rate which currently is (%" PRIu32 " * %" PRIu32 " * %" PRIu32 ").",
-                         sample_location_info.sampleLocationsCount, sample_location_info.sampleLocationGridSize.width,
+                         ") must equal [sampleLocationGridSize.width * sampleLocationGridSize.height * sampleLocationsPerPixel] which currently is %" PRIu32 " [%" PRIu32 " * %" PRIu32 " * %" PRIu32 "].",
+                         sample_location_info.sampleLocationsCount, sample_total_size, sample_location_info.sampleLocationGridSize.width,
                          sample_location_info.sampleLocationGridSize.height, SampleCountSize(sample_count));
     }
     if ((phys_dev_ext_props.sample_locations_props.sampleLocationSampleCounts & sample_count) == 0) {
@@ -2369,14 +2368,15 @@ bool CoreChecks::ValidateGraphicsPipelineMultisampleState(const vvl::Pipeline &p
     // VK_EXT_sample_locations
     const auto *sample_location_state =
         vku::FindStructInPNextChain<VkPipelineSampleLocationsStateCreateInfoEXT>(multisample_state->pNext);
-    if (sample_location_state != nullptr) {
-        if ((sample_location_state->sampleLocationsEnable == VK_TRUE) &&
-            !pipeline.IsDynamic(CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT) &&
-            !pipeline.IsDynamic(CB_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT)) {
-            const VkSampleLocationsInfoEXT sample_location_info = sample_location_state->sampleLocationsInfo;
-            const Location sample_info_loc =
-                ms_loc.pNext(Struct::VkPipelineSampleLocationsStateCreateInfoEXT, Field::sampleLocationsInfo);
-            skip |= ValidateSampleLocationsInfo(sample_location_info, sample_info_loc.dot(Field::sampleLocationsInfo));
+    if (sample_location_state && sample_location_state->sampleLocationsEnable) {
+        const VkSampleLocationsInfoEXT sample_location_info = sample_location_state->sampleLocationsInfo;
+        const Location sample_info_loc = ms_loc.pNext(Struct::VkPipelineSampleLocationsStateCreateInfoEXT, Field::sampleLocationsInfo);
+
+        if (!pipeline.IsDynamic(CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT)) {
+            skip |= ValidateSampleLocationsInfo(sample_location_info, sample_info_loc);
+        }
+
+        if (!pipeline.IsDynamic(CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT) && !pipeline.IsDynamic(CB_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT)) {
             const VkExtent2D grid_size = sample_location_info.sampleLocationGridSize;
 
             VkMultisamplePropertiesEXT multisample_prop = vku::InitStructHelper();

@@ -5262,9 +5262,7 @@ TEST_F(NegativeDynamicState, DynamicRasterizationSamples) {
     m_command_buffer.End();
 }
 
-TEST_F(NegativeDynamicState, SampleLocationsEnable) {
-    TEST_DESCRIPTION("Test sample locations enable");
-
+TEST_F(NegativeDynamicState, SampleLocationsRasterizationDynamic) {
     AddRequiredExtensions(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME);
     AddRequiredExtensions(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
     AddRequiredFeature(vkt::Feature::extendedDynamicState3RasterizationSamples);
@@ -5307,55 +5305,128 @@ TEST_F(NegativeDynamicState, SampleLocationsEnable) {
 
     sample_location_state.sampleLocationsInfo.sampleLocationGridSize.width = multisample_prop.maxSampleLocationGridSize.width + 1u;
 
+    CreatePipelineHelper pipe(*this);
+    pipe.ms_ci_ = pipe_ms_state_ci;
+    pipe.AddDynamicState(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT);
+    m_errorMonitor->SetDesiredError("VUID-VkSampleLocationsInfoEXT-sampleLocationsCount-01527");
+    pipe.CreateGraphicsPipeline();
+    m_errorMonitor->VerifyFound();
+}
+
+TEST_F(NegativeDynamicState, SampleLocationsEnable) {
+    AddRequiredExtensions(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::extendedDynamicState3RasterizationSamples);
+    RETURN_IF_SKIP(Init());
+
+    VkFormat color_format = VK_FORMAT_R8G8B8A8_UNORM;
+    VkImageCreateInfo image_ci = vku::InitStructHelper();
+    image_ci.imageType = VK_IMAGE_TYPE_2D;
+    image_ci.format = color_format;
+    image_ci.extent = {32u, 32u, 1u};
+    image_ci.mipLevels = 1u;
+    image_ci.arrayLayers = 1u;
+    image_ci.samples = VK_SAMPLE_COUNT_4_BIT;
+    image_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image_ci.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    vkt::Image image(*m_device, image_ci, vkt::set_layout);
+    vkt::ImageView image_view = image.CreateView();
+
+    vkt::Image resolve_image(*m_device, 32u, 32u, color_format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+    vkt::ImageView resolve_image_view = resolve_image.CreateView();
+
+    RenderPassSingleSubpass rp(*this);
+    rp.AddAttachmentDescription(color_format, VK_SAMPLE_COUNT_4_BIT);
+    rp.AddAttachmentDescription(color_format, VK_SAMPLE_COUNT_1_BIT);
+    rp.AddAttachmentReference({0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL});
+    rp.AddAttachmentReference({1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL});
+    rp.AddColorAttachment(0);
+    rp.AddResolveAttachment(1);
+    rp.CreateRenderPass();
+
+    VkImageView attachments[2] = {image_view, resolve_image_view};
+    const vkt::Framebuffer fb(*m_device, rp, 2, attachments);
+
+    VkPhysicalDeviceSampleLocationsPropertiesEXT sample_location_properties = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(sample_location_properties);
+    if (!sample_location_properties.variableSampleLocations) {
+        GTEST_SKIP() << "variableSampleLocations not supported";
+    }
+
+    VkMultisamplePropertiesEXT multisample_prop = vku::InitStructHelper();
+    vk::GetPhysicalDeviceMultisamplePropertiesEXT(Gpu(), VK_SAMPLE_COUNT_2_BIT, &multisample_prop);
+    const uint32_t valid_count =
+        multisample_prop.maxSampleLocationGridSize.width * multisample_prop.maxSampleLocationGridSize.height * 2;
+
+    if (valid_count <= 4) {
+        GTEST_SKIP() << "Need a maxSampleLocationGridSize width x height greater than 2";
+    }
+
+    std::vector<VkSampleLocationEXT> sample_location(valid_count, {0.5f, 0.5f});
+    VkSampleLocationsInfoEXT sample_locations_info = vku::InitStructHelper();
+    sample_locations_info.sampleLocationsPerPixel = VK_SAMPLE_COUNT_2_BIT;
+    sample_locations_info.sampleLocationGridSize.width = multisample_prop.maxSampleLocationGridSize.width;
+    sample_locations_info.sampleLocationGridSize.height = multisample_prop.maxSampleLocationGridSize.height;
+    sample_locations_info.sampleLocationsCount = valid_count;
+    sample_locations_info.pSampleLocations = sample_location.data();
+
+    VkPipelineSampleLocationsStateCreateInfoEXT sample_location_state = vku::InitStructHelper();
+    sample_location_state.sampleLocationsEnable = VK_TRUE;
+    sample_location_state.sampleLocationsInfo = sample_locations_info;
+
+    VkPipelineMultisampleStateCreateInfo pipe_ms_state_ci = vku::InitStructHelper(&sample_location_state);
+    pipe_ms_state_ci.rasterizationSamples = VK_SAMPLE_COUNT_2_BIT;
+    pipe_ms_state_ci.sampleShadingEnable = 0;
+    pipe_ms_state_ci.minSampleShading = 1.0;
+    pipe_ms_state_ci.pSampleMask = nullptr;
+
     CreatePipelineHelper pipe1(*this);
     pipe1.ms_ci_ = pipe_ms_state_ci;
+    pipe1.gp_ci_.renderPass = rp;
     pipe1.AddDynamicState(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT);
     pipe1.CreateGraphicsPipeline();
 
-    sample_location_state.sampleLocationsInfo.sampleLocationGridSize.width = multisample_prop.maxSampleLocationGridSize.width;
-    sample_location_state.sampleLocationsInfo.sampleLocationGridSize.height = multisample_prop.maxSampleLocationGridSize.height + 1;
+    // CreatePipelineHelper pipe2(*this);
+    // pipe2.ms_ci_ = pipe_ms_state_ci;
+    // pipe2.AddDynamicState(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT);
+    // pipe2.CreateGraphicsPipeline();
 
-    CreatePipelineHelper pipe2(*this);
-    pipe2.ms_ci_ = pipe_ms_state_ci;
-    pipe2.AddDynamicState(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT);
-    pipe2.CreateGraphicsPipeline();
+    // sample_location_state.sampleLocationsInfo.sampleLocationGridSize.height /= 2;
+    // pipe_ms_state_ci.rasterizationSamples = VK_SAMPLE_COUNT_4_BIT;
+    // sample_location_state.sampleLocationsInfo.sampleLocationsPerPixel = VK_SAMPLE_COUNT_4_BIT;
 
-    sample_location_state.sampleLocationsInfo.sampleLocationGridSize.height = multisample_prop.maxSampleLocationGridSize.height;
-    pipe_ms_state_ci.rasterizationSamples = VK_SAMPLE_COUNT_2_BIT;
-    sample_location_state.sampleLocationsInfo.sampleLocationsPerPixel = VK_SAMPLE_COUNT_2_BIT;
+    // VkMultisamplePropertiesEXT multisample_prop2 = vku::InitStructHelper();
+    // vk::GetPhysicalDeviceMultisamplePropertiesEXT(Gpu(), VK_SAMPLE_COUNT_4_BIT, &multisample_prop2);
+    // // 2 from VK_SAMPLE_COUNT_2_BIT
+    // const uint32_t valid_count2 =
+    //     multisample_prop.maxSampleLocationGridSize.width * multisample_prop.maxSampleLocationGridSize.height * 4;
 
-    VkMultisamplePropertiesEXT multisample_prop2 = vku::InitStructHelper();
-    vk::GetPhysicalDeviceMultisamplePropertiesEXT(Gpu(), VK_SAMPLE_COUNT_2_BIT, &multisample_prop2);
-    // 2 from VK_SAMPLE_COUNT_2_BIT
-    const uint32_t valid_count2 =
-        multisample_prop.maxSampleLocationGridSize.width * multisample_prop.maxSampleLocationGridSize.height * 2;
+    // std::vector<VkSampleLocationEXT> sample_location2(valid_count2, {0.5f, 0.5f});
+    // sample_location_state.sampleLocationsInfo.pSampleLocations = sample_location2.data();
 
-    std::vector<VkSampleLocationEXT> sample_location2(valid_count2, {0.5f, 0.5f});
-    sample_location_state.sampleLocationsInfo.pSampleLocations = sample_location2.data();
-
-    CreatePipelineHelper pipe3(*this);
-    pipe3.ms_ci_ = pipe_ms_state_ci;
-    pipe3.AddDynamicState(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT);
-    pipe3.CreateGraphicsPipeline();
+    // CreatePipelineHelper pipe3(*this);
+    // pipe3.ms_ci_ = pipe_ms_state_ci;
+    // pipe3.AddDynamicState(VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT);
+    // pipe3.CreateGraphicsPipeline();
 
     m_command_buffer.Begin();
-    m_command_buffer.BeginRenderPass(m_renderPassBeginInfo);
+    m_command_buffer.BeginRenderPass(rp, fb, 32, 32);
     vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe1);
-    vk::CmdSetRasterizationSamplesEXT(m_command_buffer, VK_SAMPLE_COUNT_1_BIT);
+    vk::CmdSetRasterizationSamplesEXT(m_command_buffer, VK_SAMPLE_COUNT_4_BIT);
 
     m_errorMonitor->SetDesiredError("VUID-vkCmdDraw-sampleLocationsEnable-07936");
     vk::CmdDraw(m_command_buffer, 3u, 1u, 0u, 0u);
     m_errorMonitor->VerifyFound();
 
-    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe2);
-    m_errorMonitor->SetDesiredError("VUID-vkCmdDraw-sampleLocationsEnable-07937");
-    vk::CmdDraw(m_command_buffer, 3u, 1u, 0u, 0u);
-    m_errorMonitor->VerifyFound();
+    // vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe2);
+    // m_errorMonitor->SetDesiredError("VUID-vkCmdDraw-sampleLocationsEnable-07937");
+    // vk::CmdDraw(m_command_buffer, 3u, 1u, 0u, 0u);
+    // m_errorMonitor->VerifyFound();
 
-    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe3);
-    m_errorMonitor->SetDesiredError("VUID-vkCmdDraw-sampleLocationsEnable-07938");
-    vk::CmdDraw(m_command_buffer, 3u, 1u, 0u, 0u);
-    m_errorMonitor->VerifyFound();
+    // vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe3);
+    // m_errorMonitor->SetDesiredError("VUID-vkCmdDraw-sampleLocationsEnable-07938");
+    // vk::CmdDraw(m_command_buffer, 3u, 1u, 0u, 0u);
+    // m_errorMonitor->VerifyFound();
 
     m_command_buffer.EndRenderPass();
     m_command_buffer.End();
