@@ -61,7 +61,9 @@ const int kBindingInstActionIndex = 5;
 const int kBindingInstCmdResourceIndex = 6;
 const int kBindingInstCmdErrorsCount = 7;
 const int kBindingInstVertexAttributeFetchLimits = 8;
-const int kTotalBindings = 9;
+const int kBindingInstDescriptorHeapPostProcess = 9;
+const int kBindingInstDescriptorHeapValidDescriptors = 10;
+const int kTotalBindings = 11;
 
 // Validation pipelines
 // ---
@@ -139,7 +141,7 @@ const uint kShaderIdMask = 0x3FFFF;
 // | is accessed | Action Cmd Index | Instrumented Shader Id |
 //
 // We make some assumptions from profiling that we can maintain these limits and squeeze all this information in a single dword
-// these values are asserted for and can be adjusted if we edge cases that matter
+// these values are asserted for and can be adjusted if we hit edge cases that matter
 //
 // cst::indices_count is set at 1u << 13 (8192) used to set the action cmd index
 //
@@ -147,6 +149,24 @@ const uint kShaderIdMask = 0x3FFFF;
 const uint kPostProcessMetaMaskAccessed = 1u << 31;
 const uint kPostProcessMetaShiftErrorLoggerIndex = 18;
 const uint kPostProcessMetaMaskErrorLoggerIndex = 0x1FFF << kPostProcessMetaShiftErrorLoggerIndex;
+
+const int kDebugMaxDescSetAndBindings = 32 * 32;
+
+const int kDescriptorHeapUniformBuffer = 1 << 0;
+const int kDescriptorHeapStorageBuffer = 1 << 1;
+const int kDescriptorHeapSampler = 1 << 2;
+const int kDescriptorHeapImage = 1 << 3;
+const int kDescriptorHeapTexelPointer = 1 << 4;
+const int kDescriptorHeapUnregisteredCustomBorder = 1 << 5;
+const int kDescriptorHeapCustomBorderDifferentColor = 1 << 6;
+const int kDescriptorHeapImageArrayed = 1 << 7;
+const int kDescriptorHeapImageMultiSampled = 1 << 8;
+const int kDescriptorHeapImageSampledMask = 0x3;
+const int kDescriptorHeapImageSampledShift = 9;
+const int kDescriptorHeapImageDimMask = 0x7;
+const int kDescriptorHeapImageDimShift = 11;
+const int kDescriptorHeapImageFormatMask = 0x3F;
+const int kDescriptorHeapImageFormatShift = 14;
 
 #ifdef __cplusplus
 }  // namespace glsl

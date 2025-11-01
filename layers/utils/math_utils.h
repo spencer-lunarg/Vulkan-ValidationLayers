@@ -120,6 +120,10 @@ static inline bool IsBetweenInclusive(VkDeviceSize value, VkDeviceSize min, VkDe
     return (value >= min) && (value <= max);
 }
 
+static inline bool IsBetweenInclusive(uint32_t value, uint32_t min, uint32_t max) {
+    return (value >= min) && (value <= max);
+}
+
 static inline bool IsBetweenInclusive(const VkExtent2D& value, const VkExtent2D& min, const VkExtent2D& max) {
     return IsBetweenInclusive(value.width, min.width, max.width) && IsBetweenInclusive(value.height, min.height, max.height);
 }

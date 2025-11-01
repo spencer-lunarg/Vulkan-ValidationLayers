@@ -63,6 +63,15 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
         stdext::inplace_function<void(CommandBufferSubState &cb, VkPipelineBindPoint bind_point,
                                       VkDescriptorAddressInfoEXT &out_address_info, uint32_t &out_dst_binding),
                                  48>;
+    using OnInstrumentationDescHeapUpdate =
+        stdext::inplace_function<void(CommandBufferSubState &cb, VkPipelineBindPoint bind_point, uint8_t *heap_memory,
+                                      const Location &loc, VkDeviceAddressRangeEXT &out_address_range, uint32_t &out_dst_binding),
+                                 48>;
+    using OnInstrumentationDescHeapDescriptors =
+        stdext::inplace_function<void(Validator &gpuav, CommandBufferSubState &cb, VkPipelineBindPoint bind_point,
+                                      uint8_t *resource_heap_memory, uint8_t *sampler_heap_memory, const Location &loc,
+                                      VkDeviceAddressRangeEXT &out_address_range, uint32_t &out_dst_binding),
+                                 48>;
     using OnCommandBufferSubmission =
         stdext::inplace_function<void(Validator &gpuav, CommandBufferSubState &cb, VkCommandBuffer per_submission_cb)>;
     using OnCommandBufferCompletion =
@@ -76,6 +85,8 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
     std::vector<OnInstrumentationErrorLoggerRegister> on_instrumentation_error_logger_register_functions;
     std::vector<OnInstrumentationDescSetUpdate> on_instrumentation_desc_set_update_functions;
     std::vector<OnInstrumentationDescBufferUpdate> on_instrumentation_desc_buffer_update_functions;
+    std::vector<OnInstrumentationDescHeapUpdate> on_instrumentation_desc_heap_update_functions;
+    std::vector<OnInstrumentationDescHeapDescriptors> on_instrumentation_desc_heap_descriptors_functions;
     std::vector<OnPreCommandBufferSubmission> on_pre_cb_submission_functions;
     std::vector<OnPostCommandBufferSubmission> on_post_cb_submission_functions;
     std::vector<OnCommandBufferCompletion> on_cb_completion_functions;
@@ -156,6 +167,14 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
 
     // Track which index we have bound our Descriptor Buffer in CmdBindDescriptorBuffersEXT
     uint32_t resource_descriptor_buffer_index_;
+
+    std::vector<uint8_t> push_data_;
+
+    template <typename T>
+    T GetPushData(size_t offset) {
+        assert(offset + sizeof(T) <= push_data_.size());
+        return *reinterpret_cast<T *>(push_data_.data() + offset);
+    }
 
   private:
     void AllocateResources(const Location &loc);

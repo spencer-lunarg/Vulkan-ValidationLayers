@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,8 @@ namespace gpuav {
 class Validator;
 class CommandBufferSubState;
 
-void RegisterBufferDeviceAddressValidation(Validator& gpuav, CommandBufferSubState& cb);
-void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& cb);
-void RegisterRayQueryValidation(Validator& gpuav, CommandBufferSubState& cb);
-void RegisterMeshShadingValidation(Validator& gpuav, CommandBufferSubState& cb);
-void RegisterSanitizer(Validator& gpuav, CommandBufferSubState& cb);
-void RegisterVertexAttributeFetchOobValidation(Validator& gpuav, CommandBufferSubState& cb);
-void RegisterPostProcessingDescriptorIndexing(Validator& gpuav, CommandBufferSubState& cb);
+const int kDebugMaxDescSetAndBindings = 32 * 32;
+
+void RegisterPostProcessingDescriptorHeap(Validator& gpuav, CommandBufferSubState& cb);
 
 }  // namespace gpuav

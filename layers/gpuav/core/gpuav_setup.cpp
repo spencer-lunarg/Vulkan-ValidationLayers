@@ -230,6 +230,10 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         {glsl::kBindingInstCmdErrorsCount, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
         // Vertex attribute fetch limits
         {glsl::kBindingInstVertexAttributeFetchLimits, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+        // Descriptor heap post processing
+        {glsl::kBindingInstDescriptorHeapPostProcess, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
+        // Descriptor heap valid descriptors buffer
+        {glsl::kBindingInstDescriptorHeapValidDescriptors, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
     };
     assert(instrumentation_bindings_.size() == glsl::kTotalBindings);
 
@@ -267,6 +271,9 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         VkBufferCreateInfo error_buffer_ci = vku::InitStructHelper();
         error_buffer_ci.size = glsl::kErrorBufferByteSize;
         error_buffer_ci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        if (IsExtEnabled(extensions.vk_ext_descriptor_heap)) {
+            error_buffer_ci.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        }
         VmaAllocationCreateInfo error_buffer_alloc_ci = {};
         error_buffer_alloc_ci.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         error_buffer_alloc_ci.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -285,6 +292,9 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
 
         VkBufferCreateInfo buffer_info = vku::InitStructHelper();
         buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        if (IsExtEnabled(extensions.vk_ext_descriptor_heap)) {
+            buffer_info.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        }
         buffer_info.size = cst::indices_count * indices_buffer_alignment_;
         VmaAllocationCreateInfo alloc_info = {};
         alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -313,6 +323,24 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         const bool success = global_resource_descriptor_buffer_.Create(&buffer_info, &alloc_info);
         if (!success) {
             InternalVmaError(device, result, "Failed to create an internal resource Descriptor Buffer.");
+            return;
+        }
+    }
+
+    // Create our own Descriptor Heap if the user wont bind one
+    if (IsExtEnabled(extensions.vk_ext_descriptor_heap)) {
+        VkDeviceSize bytes_to_reserve = Align(phys_dev_ext_props.descriptor_heap_props.bufferDescriptorSize * glsl::kTotalBindings,
+                                              phys_dev_ext_props.descriptor_heap_props.bufferDescriptorAlignment);
+        bytes_to_reserve = Align(bytes_to_reserve, phys_dev_ext_props.descriptor_heap_props.resourceHeapAlignment);
+        VkBufferCreateInfo buffer_info = vku::InitStructHelper();
+        buffer_info.size = bytes_to_reserve + phys_dev_ext_props.descriptor_heap_props.minResourceHeapReservedRange;
+        buffer_info.usage = VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        VmaAllocationCreateInfo alloc_info = {};
+        alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        alloc_info.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        const bool success = global_resource_descriptor_heap_.Create(&buffer_info, &alloc_info);
+        if (!success) {
+            InternalVmaError(device, result, "Failed to create an internal resource Descriptor Heap.");
             return;
         }
     }

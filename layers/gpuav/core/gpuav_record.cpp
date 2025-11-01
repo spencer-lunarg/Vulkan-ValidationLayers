@@ -23,6 +23,7 @@
 #include "gpuav/instrumentation/descriptor_checks.h"
 #include "gpuav/instrumentation/gpuav_instrumentation.h"
 #include "gpuav/instrumentation/register_validation.h"
+#include "gpuav/instrumentation/post_process_descriptor_heap.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "gpuav/validation_cmd/gpuav_copy_buffer_to_image.h"
@@ -31,9 +32,11 @@
 #include "gpuav/validation_cmd/gpuav_draw.h"
 #include "gpuav/validation_cmd/gpuav_ray_tracing.h"
 #include "utils/math_utils.h"
+#include "utils/shader_utils.h"
 
 #include <cstdint>
 #include <vulkan/utility/vk_safe_struct.hpp>
+#include <xxhash.h>
 
 namespace gpuav {
 
@@ -72,6 +75,13 @@ void Validator::PreCallRecordCreateBuffer(VkDevice device, const VkBufferCreateI
         chassis_state.modified_create_info.size = Align<VkDeviceSize>(chassis_state.modified_create_info.size, 4);
     }
 
+    // If descriptor heaps are used, uniform buffers can be used for indirect indices and we need to be able to copy them
+    if (gpuav_settings.shader_instrumentation.descriptor_heap) {
+        if (in_usage & VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT) {
+            chassis_state.modified_create_info.usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        }
+    }
+
     chassis_state.create_info_copy = chassis_state.modified_create_info.ptr();
 }
 
@@ -88,7 +98,72 @@ void Validator::PostCallRecordCreateBuffer(VkDevice device, const VkBufferCreate
 
 void Validator::PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks *pAllocator,
                                            const RecordObject &record_obj) {
+    auto buffer_state = Get<vvl::Buffer>(buffer);
+    const auto buffer_addr = buffer_state->DeviceAddressRange();
+    if ((buffer_state->usage & (VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT)) != 0) {
+        for (auto it = heap_buffers.begin(); it != heap_buffers.end();) {
+            auto &bucket = it->second;
+
+            bucket.erase(
+                std::remove_if(bucket.begin(), bucket.end(),
+                               [&](const Validator::BufferEntry &entry) {
+                                   if (entry.type & (glsl::kDescriptorHeapUniformBuffer | glsl::kDescriptorHeapStorageBuffer)) {
+                                       return buffer_addr.begin <= entry.address_range.address &&
+                                              buffer_addr.end >= (entry.address_range.address + entry.address_range.size);
+                                   }
+                                   return false;
+                               }),
+                bucket.end());
+
+            if (bucket.empty()) {
+                it = heap_buffers.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    if ((buffer_state->usage & (VK_BUFFER_USAGE_2_STORAGE_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_2_UNIFORM_TEXEL_BUFFER_BIT)) != 0) {
+        for (auto it = heap_texel_buffers.begin(); it != heap_texel_buffers.end();) {
+            auto &bucket = it->second;
+
+            bucket.erase(std::remove_if(bucket.begin(), bucket.end(),
+                                        [&](const Validator::BufferEntry &entry) {
+                                            if (entry.type & glsl::kDescriptorHeapTexelPointer) {
+                                                return buffer_addr.begin <= entry.address_range.address &&
+                                                       buffer_addr.end >= (entry.address_range.address + entry.address_range.size);
+                                            }
+                                            return false;
+                                        }),
+                         bucket.end());
+
+            if (bucket.empty()) {
+                it = heap_texel_buffers.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     resource_descriptor_buffer_handles_.erase(buffer);
+}
+
+void Validator::PreCallRecordDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks *pAllocator,
+                                          const RecordObject &record_obj) {
+    for (auto it = heap_images.begin(); it != heap_images.end();) {
+        auto &bucket = it->second;
+
+        bucket.erase(std::remove_if(bucket.begin(), bucket.end(),
+                                    [&](const Validator::ImageEntry &entry) {
+                                        return (entry.type & glsl::kDescriptorHeapImage) && entry.image == image;
+                                    }),
+                     bucket.end());
+
+        if (bucket.empty()) {
+            it = heap_images.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void Validator::PreCallRecordFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks *pAllocator,
@@ -144,6 +219,206 @@ void Validator::PreCallRecordCmdBindDescriptorBuffersEXT(VkCommandBuffer command
     chassis_state.pBindInfos = reinterpret_cast<VkDescriptorBufferBindingInfoEXT *>(chassis_state.modified_binding_infos.data());
 }
 
+
+void Validator::PreCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT *pBindInfo,
+                                                    const RecordObject &record_obj) {
+    const auto buffer_states = GetBuffersByAddress(pBindInfo->heapRange.address);
+    if (buffer_states.empty()) {
+        InternalError(commandBuffer, record_obj.location.dot(Field::pBindInfo), "address points to no VkBuffer");
+    } else {
+        if (buffer_states.size() > 1) {
+            InternalWarning(commandBuffer, record_obj.location.dot(Field::pBindInfo),
+                            "address points to multiple VkBuffer, taking first one");
+        }
+        resource_heap_buffer_state_ = buffer_states[0];
+    }
+    resource_heap_reserved_offset_ = pBindInfo->reservedRangeOffset;
+    resource_heap_reserved_range_size_ = pBindInfo->reservedRangeSize;
+    resource_heap_size_ = pBindInfo->heapRange.size;
+
+    auto modified_bind_heap_info = const_cast<VkBindHeapInfoEXT *>(pBindInfo);
+    modified_bind_heap_info->reservedRangeOffset += resource_heap_reserved_bytes_;
+    modified_bind_heap_info->reservedRangeSize -= resource_heap_reserved_bytes_;
+}
+
+void Validator::PostCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT *pBindInfo,
+                                                     const RecordObject &record_obj) {
+    auto modified_bind_heap_info = const_cast<VkBindHeapInfoEXT *>(pBindInfo);
+    modified_bind_heap_info->reservedRangeOffset -= resource_heap_reserved_bytes_;
+    modified_bind_heap_info->reservedRangeSize += resource_heap_reserved_bytes_;
+}
+
+void Validator::PreCallRecordCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT *pBindInfo,
+                                                  const RecordObject &record_obj) {
+    const auto buffer_states = GetBuffersByAddress(pBindInfo->heapRange.address);
+    if (buffer_states.empty()) {
+        InternalError(commandBuffer, record_obj.location.dot(Field::pBindInfo), "address points to no VkBuffer");
+    } else {
+        if (buffer_states.size() > 1) {
+            InternalWarning(commandBuffer, record_obj.location.dot(Field::pBindInfo),
+                            "address points to multiple VkBuffer, taking first one");
+        }
+        sampler_heap_buffer_state_ = buffer_states[0];
+    }
+    sampler_heap_reserved_offset_ = pBindInfo->reservedRangeOffset;
+    sampler_heap_reserved_range_size_ = pBindInfo->reservedRangeSize;
+    sampler_heap_size_ = pBindInfo->heapRange.size;
+}
+
+uint32_t Validator::GetHeapImageType(const VkDescriptorType resource_type, const VkImageViewCreateInfo &view) {
+    uint32_t dim = 0u;
+    bool arrayed = false;
+    bool multisampled = false;
+    uint32_t sampled = 1u;
+    if (resource_type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || resource_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+        if (view.viewType == VK_IMAGE_VIEW_TYPE_1D) {
+            dim = spv::Dim1D;
+        } else if (view.viewType == VK_IMAGE_VIEW_TYPE_2D) {
+            dim = spv::Dim2D;
+        } else if (view.viewType == VK_IMAGE_VIEW_TYPE_3D) {
+            dim = spv::Dim3D;
+        } else if (view.viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
+            dim = spv::DimCube;
+        } else if (view.viewType == VK_IMAGE_VIEW_TYPE_1D_ARRAY) {
+            dim = spv::Dim1D;
+            arrayed = true;
+        } else if (view.viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY) {
+            dim = spv::Dim2D;
+            arrayed = true;
+        } else if (view.viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
+            dim = spv::DimCube;
+            arrayed = true;
+        }
+        if (resource_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+            sampled = 2u;
+        }
+    } else if (resource_type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT) {
+        dim = spv::DimSubpassData;
+        sampled = 2u;
+    } else if (resource_type == VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM) {
+        dim = spv::Dim2D;
+        arrayed = true;
+    } else if (resource_type == VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM) {
+        dim = spv::Dim2D;
+    }
+    if (resource_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE || resource_type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT) {
+        auto image_state = Get<vvl::Image>(view.image);
+        if (image_state->create_info.samples != VK_SAMPLE_COUNT_1_BIT) {
+            multisampled = true;
+        }
+    }
+    uint32_t type = 0u;
+    if (arrayed) {
+        type |= glsl::kDescriptorHeapImageArrayed;
+    }
+    if (multisampled) {
+        type |= glsl::kDescriptorHeapImageMultiSampled;
+    }
+    assert(sampled < glsl::kDescriptorHeapImageSampledMask);
+    type |= (sampled & glsl::kDescriptorHeapImageSampledMask) << glsl::kDescriptorHeapImageSampledShift;
+    assert(dim < glsl::kDescriptorHeapImageDimMask);
+    type |= (dim & glsl::kDescriptorHeapImageDimMask) << glsl::kDescriptorHeapImageDimShift;
+    uint32_t format = GetSpvCompatibleFormat(view.format);
+    assert(format < glsl::kDescriptorHeapImageFormatMask);
+    type |= (format & glsl::kDescriptorHeapImageFormatMask) << glsl::kDescriptorHeapImageFormatShift;
+    return type;
+}
+
+void Validator::PostCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                          const VkResourceDescriptorInfoEXT *pResources,
+                                                          const VkHostAddressRangeEXT *pDescriptors,
+                                                          const RecordObject &record_obj) {
+    for (uint32_t i = 0; i < resourceCount; ++i) {
+        const auto &resource = pResources[i];
+        const uint8_t *address = reinterpret_cast<const uint8_t *>(pDescriptors[i].address);
+        const size_t n = pDescriptors[i].size;
+        const HeapKey key = {XXH3_64bits(address, n), n};
+        switch (resource.type) {
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
+                if (resource.data.pAddressRange) {
+                    uint32_t type = resource.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ? glsl::kDescriptorHeapStorageBuffer
+                                                                                       : glsl::kDescriptorHeapUniformBuffer;
+                    heap_buffers[key].push_back(
+                        BufferEntry{std::vector<uint8_t>(address, address + n), type, *resource.data.pAddressRange});
+                }
+            } break;
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
+            case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
+            case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
+                if (resource.data.pImage) {
+                    const auto &view = *resource.data.pImage->pView;
+                    uint32_t type = GetHeapImageType(resource.type, view) | glsl::kDescriptorHeapImage;
+                    heap_images[key].push_back(ImageEntry{std::vector<uint8_t>(address, address + n), type, view.image});
+                }
+            } break;
+            case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+            case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: {
+                if (pResources[i].data.pTexelBuffer) {
+                    uint32_t type = glsl::kDescriptorHeapTexelPointer;
+                    uint32_t format = GetSpvCompatibleFormat(pResources[i].data.pTexelBuffer->format);
+                    assert(format < glsl::kDescriptorHeapImageFormatMask);
+                    type |= (format & glsl::kDescriptorHeapImageFormatMask) << glsl::kDescriptorHeapImageFormatShift;
+                    type |= (2u & glsl::kDescriptorHeapImageSampledMask) << glsl::kDescriptorHeapImageSampledShift;
+                    type |= (spv::DimBuffer & glsl::kDescriptorHeapImageDimMask) << glsl::kDescriptorHeapImageDimShift;
+                    heap_texel_buffers[key].push_back(BufferEntry{std::vector<uint8_t>(address, address + n), type,
+                                                                  pResources[i].data.pTexelBuffer->addressRange});
+                }
+            } break;
+            default:
+                break;
+        }
+    }
+}
+
+void Validator::PostCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount,
+                                                         const VkSamplerCreateInfo *pSamplers,
+                                                         const VkHostAddressRangeEXT *pDescriptors,
+                                                         const RecordObject &record_obj) {
+    for (uint32_t i = 0; i < samplerCount; ++i) {
+        VkClearColorValue custom_border_color = {};
+        if (const auto pNext = vku::FindStructInPNextChain<VkSamplerCustomBorderColorCreateInfoEXT>(pSamplers[i].pNext); pNext) {
+            custom_border_color = pNext->customBorderColor;
+        }
+        uint32_t custom_border_index = std::numeric_limits<uint32_t>::max();
+        if (const auto pNext = vku::FindStructInPNextChain<VkSamplerCustomBorderColorIndexCreateInfoEXT>(pSamplers[i].pNext);
+            pNext) {
+            custom_border_index = pNext->index;
+        }
+        const uint8_t *address = reinterpret_cast<const uint8_t *>(pDescriptors[i].address);
+        const size_t n = pDescriptors[i].size;
+        const HeapKey key = {XXH3_64bits(address, n), n};
+        heap_samplers[key].push_back(
+            SamplerEntry{std::vector<uint8_t>(address, address + n), custom_border_index, custom_border_color});
+    }
+}
+
+void Validator::PostCallRecordRegisterCustomBorderColorEXT(VkDevice device,
+                                                           const VkSamplerCustomBorderColorCreateInfoEXT *pBorderColor,
+                                                           VkBool32 requestIndex, uint32_t *pIndex,
+                                                           const RecordObject &record_obj) {
+    if (record_obj.result != VK_SUCCESS) {
+        return;
+    }
+    custom_border_colors[*pIndex] = pBorderColor->customBorderColor;
+}
+
+void Validator::PostCallRecordUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const RecordObject &record_obj) {
+    custom_border_colors.erase(index);
+}
+
+void Validator::PreCallRecordCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT *pPushDataInfo,
+                                            const RecordObject &record_obj) {
+    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
+    CommandBufferSubState &gpuav_cb_state = SubState(*cb_state);
+    if (pPushDataInfo->offset + pPushDataInfo->data.size > gpuav_cb_state.push_data_.size()) {
+        gpuav_cb_state.push_data_.resize(pPushDataInfo->offset + pPushDataInfo->data.size);
+    }
+    memcpy(gpuav_cb_state.push_data_.data() + pPushDataInfo->offset, pPushDataInfo->data.address, pPushDataInfo->data.size);
+}
+
 void Validator::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo *pBeginInfo,
                                                 const RecordObject &record_obj) {
     auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
@@ -154,7 +429,8 @@ void Validator::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, c
 
     CommandBufferSubState &gpuav_cb_state = SubState(*cb_state);
     RegisterDescriptorChecksValidation(*this, gpuav_cb_state);
-    RegisterPostProcessingValidation(*this, gpuav_cb_state);
+    RegisterPostProcessingDescriptorIndexing(*this, gpuav_cb_state);
+    RegisterPostProcessingDescriptorHeap(*this, gpuav_cb_state);
     RegisterBufferDeviceAddressValidation(*this, gpuav_cb_state);
     RegisterVertexAttributeFetchOobValidation(*this, gpuav_cb_state);
     RegisterMeshShadingValidation(*this, gpuav_cb_state);
@@ -263,6 +539,25 @@ void Instance::PostCallRecordGetPhysicalDeviceProperties2(VkPhysicalDevice physi
         AdjustmentWarning(physicalDevice, record_obj.location, adjustment_warnings.c_str());
     }
 
+    if (auto *desc_heap_props = vku::FindStructInPNextChain<VkPhysicalDeviceDescriptorHeapPropertiesEXT>(device_props2->pNext)) {
+        VkDeviceSize bytes_to_reserve =
+            Align(desc_heap_props->bufferDescriptorSize * glsl::kTotalBindings, desc_heap_props->bufferDescriptorAlignment);
+        bytes_to_reserve = Align(bytes_to_reserve, desc_heap_props->resourceHeapAlignment);
+
+        VkDeviceSize new_limit = desc_heap_props->minResourceHeapReservedRange + bytes_to_reserve;
+
+        std::stringstream ss;
+        ss << "Setting VkPhysicalDeviceDescriptorHeapPropertiesEXT::minResourceHeapReservedRange to " << new_limit << " (reserving "
+           << bytes_to_reserve << " bytes)";
+        InternalWarning(physicalDevice, record_obj.location, ss.str().c_str());
+
+        desc_heap_props->minResourceHeapReservedRange = new_limit;
+
+        ss << "\nSetting VkPhysicalDeviceDescriptorHeapPropertiesEXT::maxPushDataSize to "
+           << desc_heap_props->maxPushDataSize - sizeof(uint32_t) << " (reserving " << sizeof(uint32_t) << " bytes)";
+        desc_heap_props->maxPushDataSize = desc_heap_props->maxPushDataSize - sizeof(uint32_t);
+    }
+
     ReserveBindingSlot(physicalDevice, device_props2->properties.limits, record_obj.location);
 }
 
@@ -276,6 +571,7 @@ void Validator::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCa
 
     global_indices_buffer_.Destroy();
     global_resource_descriptor_buffer_.Destroy();
+    global_resource_descriptor_heap_.Destroy();
 
     BaseClass::PreCallRecordDestroyDevice(device, pAllocator, record_obj);
 
@@ -572,6 +868,7 @@ void Validator::PreCallRecordCmdDispatch(VkCommandBuffer commandBuffer, uint32_t
     const LastBound &last_bound = cb_state->GetLastBoundCompute();
     PreCallActionCommand(*this, sub_state, last_bound, record_obj.location);
 }
+
 void Validator::PreCallRecordCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                  const RecordObject &record_obj) {
     auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
@@ -852,6 +1149,77 @@ bool Validator::ValidateUnprotectedTensor(const vvl::CommandBuffer &cb_state, co
                          FormatHandle(tensor_state).c_str(), FormatHandle(cb_state).c_str(), more_message);
     }
     return skip;
+}
+
+uint32_t Validator::IsValidBuffer(const uint8_t *data, size_t n) {
+    HeapKey key{XXH3_64bits(data, n), n};
+
+    auto it = heap_buffers.find(key);
+    if (it != heap_buffers.end()) {
+        const auto &bucket = it->second;
+        for (const auto &resource : bucket) {
+            if (resource.bytes.size() == n && std::memcmp(resource.bytes.data(), data, n) == 0) {
+                return resource.type;
+            }
+        }
+    }
+
+    return 0;
+}
+
+uint32_t Validator::IsValidImage(const uint8_t *data, size_t n) {
+    HeapKey key{XXH3_64bits(data, n), n};
+
+    {
+        auto it = heap_images.find(key);
+        if (it != heap_images.end()) {
+            const auto &bucket = it->second;
+            for (const auto &resource : bucket) {
+                if (resource.bytes.size() == n && std::memcmp(resource.bytes.data(), data, n) == 0) {
+                    return resource.type;
+                }
+            }
+        }
+    }
+    {
+        auto it = heap_texel_buffers.find(key);
+        if (it != heap_texel_buffers.end()) {
+            const auto &bucket = it->second;
+            for (const auto &resource : bucket) {
+                if (resource.bytes.size() == n && std::memcmp(resource.bytes.data(), data, n) == 0) {
+                    return resource.type;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+uint32_t Validator::IsValidSampler(const uint8_t *data, size_t n) {
+    HeapKey key{XXH3_64bits(data, n), n};
+
+    auto it = heap_samplers.find(key);
+    if (it == heap_samplers.end()) {
+        return 0;
+    }
+
+    const auto &bucket = it->second;
+    for (const auto &sampler : bucket) {
+        if (sampler.bytes.size() == n && std::memcmp(sampler.bytes.data(), data, n) == 0) {
+            uint32_t r = glsl::kDescriptorHeapSampler;
+            if (sampler.custom_border_index != std::numeric_limits<uint32_t>::max()) {
+                auto registered_color = custom_border_colors.find(sampler.custom_border_index);
+                if (registered_color == custom_border_colors.end()) {
+                    r |= glsl::kDescriptorHeapUnregisteredCustomBorder;
+                } else if (std::memcmp(&sampler.custom_border_color, &registered_color->second, sizeof(VkClearColorValue)) != 0) {
+                    r |= glsl::kDescriptorHeapCustomBorderDifferentColor;
+                }
+            }
+            return r;
+        }
+    }
+    return 0;
 }
 
 }  // namespace gpuav

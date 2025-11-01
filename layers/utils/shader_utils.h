@@ -23,6 +23,7 @@
 #include <vulkan/vulkan_core.h>
 #include "containers/custom_containers.h"
 #include "utils/lock_utils.h"
+#include "state_tracker/shader_module.h"
 
 namespace spirv {
 struct ResourceInterfaceVariable;
@@ -111,4 +112,94 @@ class ValidationCache {
 void DumpSpirvToFile(const std::string &file_name, const uint32_t *spirv, size_t spirv_dwords_count);
 
 bool ResourceTypeMatchesBinding(VkSpirvResourceTypeFlagsEXT resource_type,
-                                const spirv::ResourceInterfaceVariable& resource_interface_variable);
+                                const spirv::ResourceInterfaceVariable &resource_interface_variable);
+
+inline uint32_t GetSpvCompatibleFormat(VkFormat format) {
+    switch (format) {
+        case VK_FORMAT_R8_UNORM:
+            return spv::ImageFormatR8;
+        case VK_FORMAT_R8_SNORM:
+            return spv::ImageFormatR8Snorm;
+        case VK_FORMAT_R8_UINT:
+            return spv::ImageFormatR8ui;
+        case VK_FORMAT_R8_SINT:
+            return spv::ImageFormatR8i;
+        case VK_FORMAT_R8G8_UNORM:
+            return spv::ImageFormatRg8;
+        case VK_FORMAT_R8G8_SNORM:
+            return spv::ImageFormatRg8Snorm;
+        case VK_FORMAT_R8G8_UINT:
+            return spv::ImageFormatRg8ui;
+        case VK_FORMAT_R8G8_SINT:
+            return spv::ImageFormatRg8i;
+        case VK_FORMAT_R8G8B8A8_UNORM:
+            return spv::ImageFormatRgba8;
+        case VK_FORMAT_R8G8B8A8_SNORM:
+            return spv::ImageFormatRgba8Snorm;
+        case VK_FORMAT_R8G8B8A8_UINT:
+            return spv::ImageFormatRgba8ui;
+        case VK_FORMAT_R8G8B8A8_SINT:
+            return spv::ImageFormatRgba8i;
+        case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+            return spv::ImageFormatRgb10A2;
+        case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+            return spv::ImageFormatRgb10a2ui;
+        case VK_FORMAT_R16_UNORM:
+            return spv::ImageFormatR16;
+        case VK_FORMAT_R16_SNORM:
+            return spv::ImageFormatR16Snorm;
+        case VK_FORMAT_R16_UINT:
+            return spv::ImageFormatR16ui;
+        case VK_FORMAT_R16_SINT:
+            return spv::ImageFormatR16i;
+        case VK_FORMAT_R16_SFLOAT:
+            return spv::ImageFormatR16f;
+        case VK_FORMAT_R16G16_UNORM:
+            return spv::ImageFormatRg16;
+        case VK_FORMAT_R16G16_SNORM:
+            return spv::ImageFormatRg16Snorm;
+        case VK_FORMAT_R16G16_UINT:
+            return spv::ImageFormatRg16ui;
+        case VK_FORMAT_R16G16_SINT:
+            return spv::ImageFormatRg16i;
+        case VK_FORMAT_R16G16_SFLOAT:
+            return spv::ImageFormatRg16f;
+        case VK_FORMAT_R16G16B16A16_UNORM:
+            return spv::ImageFormatRgba16;
+        case VK_FORMAT_R16G16B16A16_SNORM:
+            return spv::ImageFormatRgba16Snorm;
+        case VK_FORMAT_R16G16B16A16_UINT:
+            return spv::ImageFormatRgba16ui;
+        case VK_FORMAT_R16G16B16A16_SINT:
+            return spv::ImageFormatRgba16i;
+        case VK_FORMAT_R16G16B16A16_SFLOAT:
+            return spv::ImageFormatRgba16f;
+        case VK_FORMAT_R32_UINT:
+            return spv::ImageFormatR32ui;
+        case VK_FORMAT_R32_SINT:
+            return spv::ImageFormatR32i;
+        case VK_FORMAT_R32_SFLOAT:
+            return spv::ImageFormatR32f;
+        case VK_FORMAT_R32G32_UINT:
+            return spv::ImageFormatRg32ui;
+        case VK_FORMAT_R32G32_SINT:
+            return spv::ImageFormatRg32i;
+        case VK_FORMAT_R32G32_SFLOAT:
+            return spv::ImageFormatRg32f;
+        case VK_FORMAT_R32G32B32A32_UINT:
+            return spv::ImageFormatRgba32ui;
+        case VK_FORMAT_R32G32B32A32_SINT:
+            return spv::ImageFormatRgba32i;
+        case VK_FORMAT_R32G32B32A32_SFLOAT:
+            return spv::ImageFormatRgba32f;
+        case VK_FORMAT_R64_UINT:
+            return spv::ImageFormatR64ui;
+        case VK_FORMAT_R64_SINT:
+            return spv::ImageFormatR64i;
+        case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+            return spv::ImageFormatR11fG11fB10f;
+        default:
+            break;
+    }
+    return spv::ImageFormatUnknown;
+}

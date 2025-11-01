@@ -107,6 +107,12 @@ const Type& TypeManager::AddType(std::unique_ptr<Instruction> new_inst, SpvType 
             break;  // don't track structs currently
         case SpvType::kVectorIdEXT:
             break;  // don't track coopvec currently
+        case SpvType::kBufferEXT:
+            buffer_types_.push_back(new_type);
+            break;
+        case SpvType::kUntypedPointerKHR:
+            untyped_pointer_types_.push_back(new_type);
+            break;
         default:
             assert(false && "unsupported SpvType");
             break;

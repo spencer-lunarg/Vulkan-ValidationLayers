@@ -174,6 +174,17 @@ const int kErrorRecordSize = kHeaderSize + 5;
 const int kErrorRecordCounts = 4096;  // Maximum number of errors a command buffer can hold. Arbitrary value
 const int kErrorBufferByteSize = 4 * kErrorRecordSize * kErrorRecordCounts + 2 * 4;  // 2 * 4 bytes to store flags and errors count
 
+// Descriptor Heap
+// ---
+const int kInstDescriptorHeapOffset = kHeaderSize;
+const int kInstDescriptorHeapParamOffset_0 = kHeaderSize + 1;
+const int kInstDescriptorHeapParamOffset_1 = kHeaderSize + 2;
+
+// kInstDescriptorHeapSetAndIndexOffset
+const int kInstDescriptorHeapSetShift = 27;
+const int kInstDescriptorHeapSetMask = 0x1F << kInstDescriptorHeapSetShift;  // 32 slot
+const int kInstDescriptorHeapIndexMask = 0x7FFFFFF;
+
 #ifdef __cplusplus
 }  // namespace glsl
 #endif

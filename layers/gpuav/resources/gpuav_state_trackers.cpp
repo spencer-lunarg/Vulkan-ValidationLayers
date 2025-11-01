@@ -28,6 +28,7 @@
 
 #include "profiling/profiling.h"
 #include "state_tracker/last_bound_state.h"
+#include "utils/math_utils.h"
 
 namespace gpuav {
 
@@ -58,7 +59,9 @@ void CommandBufferSubState::AllocateResources(const Location &loc) {
 
     // Error output buffer
     {
-        error_output_buffer_range_ = gpu_resources_manager.GetHostCoherentBufferRange(glsl::kErrorBufferByteSize);
+        VkDeviceSize size = Align(static_cast<VkDeviceSize>(glsl::kErrorBufferByteSize),
+                                  gpuav_.phys_dev_props.limits.minStorageBufferOffsetAlignment);
+        error_output_buffer_range_ = gpu_resources_manager.GetHostCoherentBufferRange(size);
         if (error_output_buffer_range_.buffer == VK_NULL_HANDLE) {
             return;
         }
@@ -76,6 +79,9 @@ void CommandBufferSubState::AllocateResources(const Location &loc) {
             VkBufferCreateInfo buffer_info = vku::InitStructHelper();
             buffer_info.size = GetCmdErrorsCountsBufferByteSize();
             buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            if (IsExtEnabled(gpuav_.extensions.vk_ext_descriptor_heap)) {
+                buffer_info.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+            }
             VmaAllocationCreateInfo alloc_info = {};
             alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
             alloc_info.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -169,6 +175,7 @@ void CommandBufferSubState::ResetCBState(bool should_destroy) {
     on_instrumentation_error_logger_register_functions.clear();
     on_instrumentation_desc_set_update_functions.clear();
     on_instrumentation_desc_buffer_update_functions.clear();
+    on_instrumentation_desc_heap_update_functions.clear();
     on_cb_completion_functions.clear();
     on_post_cb_submission_functions.clear();
     on_pre_cb_submission_functions.clear();

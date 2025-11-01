@@ -994,7 +994,9 @@ vvl::DescriptorMode LastBound::GetActionDescriptorMode() const {
     // This is only needed at draw/dispatch time when there is a chance there is not bound descriptor, but can still find from a
     // pipeline/layout
     if (pipeline_state) {
-        if (pipeline_state->descriptor_buffer_mode) {
+        if (pipeline_state->create_flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT) {
+            return vvl::DescriptorModeHeap;
+        } else if (pipeline_state->descriptor_buffer_mode) {
             return vvl::DescriptorModeBuffer;
         } else if (pipeline_state->descriptor_heap_mode) {
             return vvl::DescriptorModeHeap;
@@ -1016,6 +1018,8 @@ vvl::DescriptorMode LastBound::GetActionDescriptorMode() const {
                     }
                 }
             }
+        } else {
+            return vvl::DescriptorModeHeap;
         }
     }
     // Not sure how to find it if in this situation, so resort to a safe choice

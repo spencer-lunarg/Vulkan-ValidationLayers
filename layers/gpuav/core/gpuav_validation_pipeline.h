@@ -23,6 +23,7 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <vulkan/utility/vk_safe_struct.hpp>
+#include "gpuav/core/gpuav.h"
 
 struct Location;
 

@@ -321,9 +321,34 @@ struct DrawDispatchVuid {
     const char* rendering_contents_10582 = kVUIDUndefined;
     const char* line_rasterization_10608 = kVUIDUndefined;
     const char* descriptor_heap_11308 = kVUIDUndefined;
+    const char* tile_memory_heap_10746 = kVUIDUndefined;
+    const char* descriptor_heap_11297 = kVUIDUndefined;
+    const char* descriptor_heap_11298 = kVUIDUndefined;
+    const char* descriptor_heap_11299 = kVUIDUndefined;
+    const char* descriptor_heap_11300 = kVUIDUndefined;
+    const char* descriptor_heap_11301 = kVUIDUndefined;
+    const char* descriptor_heap_11302 = kVUIDUndefined;
+    const char* descriptor_heap_11304 = kVUIDUndefined;
+    const char* descriptor_heap_11305 = kVUIDUndefined;
+    const char* descriptor_heap_11306 = kVUIDUndefined;
+    const char* descriptor_heap_11309 = kVUIDUndefined;
+    const char* descriptor_heap_11319 = kVUIDUndefined;
+    const char* descriptor_heap_11372 = kVUIDUndefined;
+    const char* descriptor_heap_11373 = kVUIDUndefined;
+    const char* descriptor_heap_11374 = kVUIDUndefined;
     const char* descriptor_heap_11375 = kVUIDUndefined;
     const char* descriptor_heap_11376 = kVUIDUndefined;
-    const char* tile_memory_heap_10746 = kVUIDUndefined;
+    const char* descriptor_heap_11397 = kVUIDUndefined;
+    const char* descriptor_heap_11398 = kVUIDUndefined;
+    const char* descriptor_heap_11437 = kVUIDUndefined;
+    const char* descriptor_heap_11438 = kVUIDUndefined;
+    const char* descriptor_heap_11439 = kVUIDUndefined;
+    const char* descriptor_heap_11440 = kVUIDUndefined;
+    const char* descriptor_heap_11441 = kVUIDUndefined;
+    const char* descriptor_heap_11442 = kVUIDUndefined;
+    const char* descriptor_heap_11443 = kVUIDUndefined;
+    const char* descriptor_heap_11455 = kVUIDUndefined;
+    const char* descriptor_heap_11456 = kVUIDUndefined;
     // Ray tracing
     const char* ray_tracing_pipeline_stack_size_09458 = kVUIDUndefined;
     // TensorARM

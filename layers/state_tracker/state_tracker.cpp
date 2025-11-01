@@ -5295,6 +5295,11 @@ void DeviceState::PostCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
                                                 uint32_t height, uint32_t depth, const RecordObject &record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
     cb_state->RecordTraceRay(record_obj.location.function);
+
+    cb_state->raygen_shader_binding_table = *pRaygenShaderBindingTable;
+    cb_state->miss_shader_binding_table = *pMissShaderBindingTable;
+    cb_state->hit_shader_binding_table = *pHitShaderBindingTable;
+    cb_state->callable_shader_binding_table = *pCallableShaderBindingTable;
 }
 
 void DeviceState::PostCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandBuffer,
@@ -5305,6 +5310,11 @@ void DeviceState::PostCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandB
                                                         VkDeviceAddress indirectDeviceAddress, const RecordObject &record_obj) {
     auto cb_state = GetWrite<CommandBuffer>(commandBuffer);
     cb_state->RecordTraceRay(record_obj.location.function);
+
+    cb_state->raygen_shader_binding_table = *pRaygenShaderBindingTable;
+    cb_state->miss_shader_binding_table = *pMissShaderBindingTable;
+    cb_state->hit_shader_binding_table = *pHitShaderBindingTable;
+    cb_state->callable_shader_binding_table = *pCallableShaderBindingTable;
 }
 
 void DeviceState::PostCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress,

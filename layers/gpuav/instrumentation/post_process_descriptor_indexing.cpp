@@ -30,7 +30,7 @@ struct PostProcessingCbState {
     vko::BufferRange last_desc_set_binding_to_post_process_buffers_lut;
 };
 
-void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& cb) {
+void RegisterPostProcessingDescriptorIndexing(Validator& gpuav, CommandBufferSubState& cb) {
     if (!gpuav.gpuav_settings.shader_instrumentation.post_process_descriptor_indexing) {
         return;
     }

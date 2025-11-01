@@ -91,7 +91,7 @@ class BufferAddressValidation {
     // system to share CoreChecks with GPU-AV
     [[nodiscard]] bool ValidateDeviceAddress(const vvl::DeviceProxy& validator, const Location& device_address_loc,
                                              const LogObjectList& objlist, VkDeviceAddress device_address,
-                                             VkDeviceSize range_size = 0) noexcept {
+                                             VkDeviceSize range_size = 0, const char* valid_address_vuid = nullptr) noexcept {
         bool skip = false;
         // There will be an implicit VU like "must be a valid VkDeviceAddress value" and if can't be zero, stateless validation
         // should have caught this already
@@ -120,7 +120,8 @@ class BufferAddressValidation {
                        << string_range_hex(buffer->DeviceAddressRange());
                 }
             }
-            skip |= validator.LogError("VUID-VkDeviceAddress-size-11364", objlist, device_address_loc, "%s", ss.str().c_str());
+            const char* vuid = valid_address_vuid ? valid_address_vuid : "VUID-VkDeviceAddress-size-11364";
+            skip |= validator.LogError(vuid, objlist, device_address_loc, "%s", ss.str().c_str());
         }
 
         // Checks if memory is in a completely and contiguously to a single VkDeviceMemory object

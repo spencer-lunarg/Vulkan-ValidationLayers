@@ -672,3 +672,4 @@ TEST_F(PositiveRayTracingPipeline, PartitionedAccelerationStructureDescriptor) {
 
     vk::UpdateDescriptorSets(device(), 1, &as_descriptor_write, 0, nullptr);
 }
+

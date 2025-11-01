@@ -2652,6 +2652,8 @@ uint32_t Module::GetTypeBitsSize(const Instruction* insn) const {
         bit_size = 0;
     } else if (opcode == spv::OpTypeSampler) {
         bit_size = 0;
+    } else if (opcode == spv::OpTypeAccelerationStructureKHR) {
+        bit_size = 0;
     } else {
         bit_size = insn->GetBitWidth();
     }

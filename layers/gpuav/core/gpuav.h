@@ -75,7 +75,8 @@ class Validator : public GpuShaderInstrumentor {
     Validator(vvl::dispatch::Device* dev, Instance* instance_vo)
         : BaseClass(dev, instance_vo, LayerObjectTypeGpuAssisted),
           global_indices_buffer_(*this),
-          global_resource_descriptor_buffer_(*this) {}
+          global_resource_descriptor_buffer_(*this),
+          global_resource_descriptor_heap_(*this) {}
 
     // gpuav_setup.cpp
     // -------------
@@ -89,6 +90,7 @@ class Validator : public GpuShaderInstrumentor {
     void InitSettings(const Location& loc);
     void DestroySubstate();
     void BindBufferMemory(VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset);
+    uint32_t GetHeapImageType(const VkDescriptorType resource_type, const VkImageViewCreateInfo& view);
 
     // gpuav_record.cpp
     // --------------
@@ -103,6 +105,8 @@ class Validator : public GpuShaderInstrumentor {
                                     VkBuffer* pBuffer, const RecordObject& record_obj) final;
     void PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks* pAllocator,
                                     const RecordObject& record_obj) final;
+    void PreCallRecordDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks* pAllocator,
+                                   const RecordObject& record_obj) final;
     void PreCallRecordFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks* pAllocator,
                                  const RecordObject& record_obj) final;
     void PostCallRecordBindBufferMemory(VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset,
@@ -115,6 +119,22 @@ class Validator : public GpuShaderInstrumentor {
                                                   const VkDescriptorBufferBindingInfoEXT* pBindingInfos,
                                                   const RecordObject& record_obj,
                                                   chassis::CmdBindDescriptorBuffers& chassis_state) final;
+    void PreCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                             const RecordObject& record_obj) final;
+    void PostCallRecordCmdBindResourceHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                              const RecordObject& record_obj) override;
+    void PreCallRecordCmdBindSamplerHeapEXT(VkCommandBuffer commandBuffer, const VkBindHeapInfoEXT* pBindInfo,
+                                            const RecordObject& record_obj) final;
+    void PostCallRecordWriteResourceDescriptorsEXT(VkDevice device, uint32_t resourceCount,
+                                                   const VkResourceDescriptorInfoEXT* pResources,
+                                                   const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj);
+    void PostCallRecordWriteSamplerDescriptorsEXT(VkDevice device, uint32_t samplerCount, const VkSamplerCreateInfo* pSamplers,
+                                                  const VkHostAddressRangeEXT* pDescriptors, const RecordObject& record_obj);
+    void PostCallRecordRegisterCustomBorderColorEXT(VkDevice device, const VkSamplerCustomBorderColorCreateInfoEXT* pBorderColor,
+                                                    VkBool32 requestIndex, uint32_t* pIndex, const RecordObject& record_obj);
+    void PostCallRecordUnregisterCustomBorderColorEXT(VkDevice device, uint32_t index, const RecordObject& record_obj);
+    void PreCallRecordCmdPushDataEXT(VkCommandBuffer commandBuffer, const VkPushDataInfoEXT* pPushDataInfo,
+                                     const RecordObject& record_obj);
 
     void PreCallActionCommand(Validator& gpuav, CommandBufferSubState& cb_state, const LastBound& last_bound, const Location& loc);
 
@@ -278,6 +298,58 @@ class Validator : public GpuShaderInstrumentor {
     vvl::unordered_set<VkBuffer> resource_descriptor_buffer_handles_;
     // We need to track handles in order to adjust vkMapMemory calls
     vvl::unordered_set<VkDeviceMemory> resource_descriptor_buffer_memory_handles_;
+
+    // VK_EXT_descriptor_heap global tracking
+    //
+    // Out internal Descriptor Heap used if the application doesn't bind its own heap
+    vko::Buffer global_resource_descriptor_heap_;
+    const vvl::Buffer* resource_heap_buffer_state_ = nullptr;
+    VkDeviceSize resource_heap_reserved_offset_ = 0;
+    VkDeviceSize resource_heap_reserved_range_size_ = 0;
+    VkDeviceSize resource_heap_size_ = 0;
+    const vvl::Buffer* sampler_heap_buffer_state_ = nullptr;
+    VkDeviceSize sampler_heap_reserved_offset_ = 0;
+    VkDeviceSize sampler_heap_reserved_range_size_ = 0;
+    VkDeviceSize sampler_heap_size_ = 0;
+
+    struct HeapKey {
+        uint64_t h;
+        size_t n;
+        bool operator==(const HeapKey& o) const noexcept { return h == o.h && n == o.n; }
+    };
+    struct HeapHash {
+        size_t operator()(const HeapKey& k) const noexcept {
+            size_t a = (size_t)k.h;
+            size_t b = k.n;
+            return a ^ (b + 0x9e3779b97f4a7c15ull + (a << 6) + (a >> 2));
+        }
+    };
+
+    struct BufferEntry {
+        std::vector<uint8_t> bytes;
+        uint32_t type;
+        VkDeviceAddressRangeEXT address_range;
+    };
+    struct ImageEntry {
+        std::vector<uint8_t> bytes;
+        uint32_t type;
+        VkImage image;
+    };
+    struct SamplerEntry {
+        std::vector<uint8_t> bytes;
+        uint32_t custom_border_index;
+        VkClearColorValue custom_border_color;
+    };
+
+    std::unordered_map<HeapKey, std::vector<BufferEntry>, HeapHash> heap_buffers;
+    std::unordered_map<HeapKey, std::vector<BufferEntry>, HeapHash> heap_texel_buffers;
+    std::unordered_map<HeapKey, std::vector<ImageEntry>, HeapHash> heap_images;
+    std::unordered_map<HeapKey, std::vector<SamplerEntry>, HeapHash> heap_samplers;
+    std::unordered_map<uint32_t, VkClearColorValue> custom_border_colors;
+
+    uint32_t IsValidBuffer(const uint8_t* data, size_t n);
+    uint32_t IsValidImage(const uint8_t* data, size_t n);
+    uint32_t IsValidSampler(const uint8_t* data, size_t n);
 
   private:
     std::string instrumented_shader_cache_path_{};

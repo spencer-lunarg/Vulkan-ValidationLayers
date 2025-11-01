@@ -33,8 +33,9 @@ bool GpuAVSettings::IsShaderInstrumentationEnabled() const {
     return shader_instrumentation.descriptor_checks || shader_instrumentation.buffer_device_address ||
            shader_instrumentation.ray_query || shader_instrumentation.mesh_shading ||
            shader_instrumentation.post_process_descriptor_indexing || shader_instrumentation.vertex_attribute_fetch_oob ||
-           shader_instrumentation.sanitizer;
+           shader_instrumentation.sanitizer || shader_instrumentation.descriptor_heap;
 }
+
 bool GpuAVSettings::IsSpirvModified() const { return IsShaderInstrumentationEnabled() || debug_printf_enabled; }
 
 // Also disables shader caching and select shader instrumentation
@@ -46,13 +47,16 @@ void GpuAVSettings::DisableShaderInstrumentationAndOptions() {
     shader_instrumentation.post_process_descriptor_indexing = false;
     shader_instrumentation.vertex_attribute_fetch_oob = false;
     shader_instrumentation.sanitizer = false;
+    shader_instrumentation.descriptor_heap = false;
     // Because of this setting, cannot really have an "enabled" parameter to pass to this method
     select_instrumented_shaders = false;
 }
+
 bool GpuAVSettings::IsBufferValidationEnabled() const {
     return validate_indirect_draws_buffers || validate_indirect_dispatches_buffers || validate_indirect_trace_rays_buffers ||
            validate_buffer_copies || validate_copy_memory_indirect || validate_index_buffers;
 }
+
 void GpuAVSettings::SetBufferValidationEnabled(bool enabled) {
     validate_indirect_draws_buffers = enabled;
     validate_indirect_dispatches_buffers = enabled;

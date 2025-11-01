@@ -1205,7 +1205,7 @@ TEST_F(PositiveDescriptorHeap, MappingSourceHeapWithIndirectIndex) {
     const VkDeviceSize offset = heap_props.bufferDescriptorAlignment * 7u;
     const uint32_t push_offset = 8u;
     const uint32_t address_offset = 16u;
-    vkt::Buffer heap_index(*m_device, sizeof(uint32_t) + address_offset, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT_KHR,
+    vkt::Buffer heap_index(*m_device, sizeof(uint32_t) + address_offset, VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT,
                            vkt::device_address);
     uint32_t* heap_index_data = static_cast<uint32_t*>(heap_index.Memory().Map());
     heap_index_data[address_offset / sizeof(uint32_t)] = static_cast<uint32_t>(offset / heap_props.bufferDescriptorAlignment);

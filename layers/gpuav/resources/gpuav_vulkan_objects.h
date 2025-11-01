@@ -313,6 +313,21 @@ class SharedResourcesCache {
         shared_validation_resources_map_;
 };
 
+struct IndirectKey {
+    bool shader_record;
+    uint32_t push_offset;
+    uint32_t address_offset;
+    bool operator==(const IndirectKey &other) const noexcept {
+        return shader_record == other.shader_record && push_offset == other.push_offset && address_offset == other.address_offset;
+    }
+};
+
+struct IndirectKeyHash {
+    size_t operator()(const gpuav::vko::IndirectKey &k) const noexcept { return (size_t(k.shader_record) << 32 ) | (size_t(k.push_offset) << 32) | k.address_offset; }
+};
+
+using IndirectAccessMap = std::shared_ptr<vvl::unordered_map<gpuav::vko::IndirectKey, gpuav::vko::StagingBuffer, IndirectKeyHash>>;
+
 }  // namespace vko
 
 }  // namespace gpuav

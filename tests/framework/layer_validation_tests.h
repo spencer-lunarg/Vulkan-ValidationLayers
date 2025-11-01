@@ -284,6 +284,30 @@ class GpuAVRayQueryTest : public GpuAVTest {
     void InitGpuAVRayQuery(std::vector<VkLayerSettingEXT> layer_settings = {});
 };
 
+class GpuAVDescriptorHeap : public GpuAVTest {
+  public:
+    void InitGpuAVDescriptorHeap(bool safe_mode = true);
+
+    void CreateResourceHeap(VkDeviceSize app_size);
+    void CreateSamplerHeap(VkDeviceSize app_size, bool use_embedded_samplers = false);
+
+    void BindResourceHeap();
+    void BindSamplerHeap();
+
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_props = vku::InitStructHelper();
+
+    vkt::Buffer resource_heap_;
+    uint8_t *resource_heap_data_ = nullptr;
+    vkt::Buffer sampler_heap_;
+    uint8_t *sampler_heap_data_ = nullptr;
+
+    size_t AlignResource(size_t offset);
+    size_t AlignSampler(size_t offset);
+
+  private:
+    bool embedded_samplers = false;
+};
+
 class DebugPrintfTests : public VkLayerTest {
   public:
     void InitDebugPrintfFramework(void *p_next = nullptr, bool reserve_slot = false);

@@ -545,6 +545,11 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
 
     std::shared_ptr<vvl::DeviceMemory> bound_tile_memory;
 
+    VkStridedDeviceAddressRegionKHR raygen_shader_binding_table{};
+    VkStridedDeviceAddressRegionKHR miss_shader_binding_table{};
+    VkStridedDeviceAddressRegionKHR hit_shader_binding_table{};
+    VkStridedDeviceAddressRegionKHR callable_shader_binding_table{};
+
     // VK_EXT_descriptor_buffer
     struct DescriptorBuffer {
         struct BindingInfo {

@@ -129,7 +129,8 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
                 type_manager_.AddConstant(std::move(new_inst), *type);
                 break;
             }
-            case spv::OpVariable: {
+            case spv::OpVariable:
+            case spv::OpUntypedVariableKHR: {
                 const Type* type = type_manager_.FindTypeById(new_inst->TypeId());
                 const Variable& new_var = type_manager_.AddVariable(std::move(new_inst), *type);
 
@@ -139,11 +140,13 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
                 // see vkspec.html#interfaces-resources-descset
                 if (storage_class == spv::StorageClassUniform || storage_class == spv::StorageClassUniformConstant ||
                     storage_class == spv::StorageClassStorageBuffer) {
-                    const Type* ptr_type = new_var.PointerType(type_manager_);
-                    // The shader will also have OpCapability RuntimeDescriptorArray
-                    if (ptr_type->spv_type_ == SpvType::kRuntimeArray) {
-                        // TODO - This might not actually need to be marked as bindless
-                        has_bindless_descriptors_ = true;
+                    if (new_var.type_.spv_type_ != SpvType::kUntypedPointerKHR) {
+                        const Type* ptr_type = new_var.PointerType(type_manager_);
+                        // The shader will also have OpCapability RuntimeDescriptorArray
+                        if (ptr_type->spv_type_ == SpvType::kRuntimeArray) {
+                            // TODO - This might not actually need to be marked as bindless
+                            has_bindless_descriptors_ = true;
+                        }
                     }
                 }
 

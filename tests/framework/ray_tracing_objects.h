@@ -452,6 +452,7 @@ class Pipeline {
     std::vector<uint8_t> GetRayTracingShaderGroupHandles();
     std::vector<uint8_t> GetRayTracingCaptureReplayShaderGroupHandles();
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> GetRayTracingShaderGroupCreateInfos();
+    void SetShaderRecordDataSize(uint32_t size) { shader_record_data_size_ = size; }
 
   private:
     uint32_t GetRayGenShadersCount() const;
@@ -482,6 +483,7 @@ class Pipeline {
     VkPipelineLibraryCreateInfoKHR pipeline_lib_info_{};
     std::vector<const Pipeline*> libraries_{};
     std::vector<VkPipeline> library_handles_{};
+    uint32_t shader_record_data_size_ = 0u;
 };
 }  // namespace rt
 

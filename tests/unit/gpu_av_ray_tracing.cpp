@@ -15,6 +15,7 @@
 #include "../framework/descriptor_helper.h"
 #include "../framework/ray_tracing_objects.h"
 #include "../framework/gpu_av_helper.h"
+#include "../utils/math_utils.h"
 
 class NegativeGpuAVRayTracing : public GpuAVRayTracingTest {};
 
@@ -1735,6 +1736,452 @@ TEST_F(NegativeGpuAVRayTracing, InvalidBlasReference3) {
     ASSERT_EQ(debug_buffer_ptr[2], 0);
 }
 
+TEST_F(NegativeGpuAVRayTracing, AccelerationStructureBufferUsage) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    RETURN_IF_SKIP(InitGpuAvFramework());
+    if (!CanEnableGpuAV(*this)) {
+        GTEST_SKIP() << "Requirements for GPU-AV are not met";
+    }
+    RETURN_IF_SKIP(InitState());
+
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(heap_props);
+
+    const VkDeviceSize descriptor_size =
+        vk::GetPhysicalDeviceDescriptorSizeEXT(gpu_, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    const uint32_t push_data_offset = 72u;
+    const uint32_t address_data_offset = 384u;
+
+    vkt::rt::Pipeline pipeline(*this, m_device);
+
+    VkDescriptorSetAndBindingMappingEXT mapping = vku::InitStructHelper();
+    mapping.descriptorSet = 0u;
+    mapping.firstBinding = 0u;
+    mapping.bindingCount = 1u;
+    mapping.resourceMask = VK_SPIRV_RESOURCE_TYPE_ACCELERATION_STRUCTURE_BIT_EXT;
+    mapping.source = VK_DESCRIPTOR_MAPPING_SOURCE_INDIRECT_ADDRESS_EXT;
+    mapping.sourceData.indirectAddress.pushOffset = push_data_offset;
+    mapping.sourceData.indirectAddress.addressOffset = address_data_offset;
+
+    VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info = vku::InitStructHelper();
+    mapping_info.mappingCount = 1u;
+    mapping_info.pMappings = &mapping;
+
+    const char *ray_gen = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require // Requires SPIR-V 1.5 (Vulkan 1.2)
+
+        layout(binding = 0, set = 0) uniform accelerationStructureEXT tlas;
+
+        layout(location = 0) rayPayloadEXT vec3 hit;
+
+        void main() {
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, vec3(0,0,1), 0.1, vec3(0,0,1), 1000.0, 0);
+        }
+    )glsl";
+    pipeline.SetGlslRayGenShader(ray_gen, nullptr, &mapping_info);
+
+    const char *miss = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+
+        void main() {
+            hit = vec3(0.1, 0.2, 0.3);
+        }
+    )glsl";
+    pipeline.AddGlslMissShader(miss);
+
+    const char *closest_hit = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+        hitAttributeEXT vec2 baryCoord;
+
+        void main() {
+            const vec3 barycentricCoords = vec3(1.0f - baryCoord.x - baryCoord.y, baryCoord.x, baryCoord.y);
+            hit = barycentricCoords;
+        }
+    )glsl";
+    pipeline.AddGlslClosestHitShader(closest_hit);
+
+    pipeline.AddCreateInfoFlags2(VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT);
+    pipeline.Build();
+
+    vkt::Buffer uniform_buffer(*m_device, address_data_offset + sizeof(VkDeviceAddress), VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT_KHR,
+                               vkt::device_address);
+    VkDeviceAddress device_address = uniform_buffer.Address();
+
+    VkDeviceAddressRangeEXT device_address_range;
+    device_address_range.address = device_address;
+    device_address_range.size = 0;
+
+    VkResourceDescriptorInfoEXT resource_info = vku::InitStructHelper();
+    resource_info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    resource_info.data.pAddressRange = &device_address_range;
+
+    vkt::Buffer address_buffer(*m_device, address_data_offset + sizeof(VkDeviceAddress), VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT_KHR,
+                               vkt::device_address);
+    uint8_t *address_data = static_cast<uint8_t *>(address_buffer.Memory().Map());
+
+    VkHostAddressRangeEXT descriptor;
+    descriptor.address = address_data + address_data_offset;
+    descriptor.size = descriptor_size;
+    vk::WriteResourceDescriptorsEXT(*m_device, 1u, &resource_info, &descriptor);
+
+    VkDeviceAddress address = address_buffer.Address();
+
+    VkPushDataInfoEXT push_data_info = vku::InitStructHelper();
+    push_data_info.offset = push_data_offset;
+    push_data_info.data.address = &address;
+    push_data_info.data.size = sizeof(VkDeviceAddress);
+
+    m_command_buffer.Begin();
+    vk::CmdPushDataEXT(m_command_buffer, &push_data_info);
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+    vkt::rt::TraceRaysSbt trace_rays_sbt = pipeline.GetTraceRaysSbt();
+    vk::CmdTraceRaysKHR(m_command_buffer, &trace_rays_sbt.ray_gen_sbt, &trace_rays_sbt.miss_sbt, &trace_rays_sbt.hit_sbt,
+                        &trace_rays_sbt.callable_sbt, 1, 1, 1);
+    m_command_buffer.End();
+    m_errorMonitor->SetDesiredError("VUID-vkCmdTraceRaysKHR-None-11440");
+    m_default_queue->SubmitAndWait(m_command_buffer);
+    m_errorMonitor->VerifyFound();
+}
+
+TEST_F(NegativeGpuAVRayTracing, AccelerationStructureBufferAlignment) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    RETURN_IF_SKIP(InitGpuAvFramework());
+    if (!CanEnableGpuAV(*this)) {
+        GTEST_SKIP() << "Requirements for GPU-AV are not met";
+    }
+    RETURN_IF_SKIP(InitState());
+
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(heap_props);
+
+    const VkDeviceSize descriptor_size =
+        vk::GetPhysicalDeviceDescriptorSizeEXT(gpu_, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    const uint32_t push_data_offset = 72u;
+    const uint32_t address_data_offset = 384u;
+
+    vkt::rt::Pipeline pipeline(*this, m_device);
+
+    VkDescriptorSetAndBindingMappingEXT mapping = vku::InitStructHelper();
+    mapping.descriptorSet = 0u;
+    mapping.firstBinding = 0u;
+    mapping.bindingCount = 1u;
+    mapping.resourceMask = VK_SPIRV_RESOURCE_TYPE_ACCELERATION_STRUCTURE_BIT_EXT;
+    mapping.source = VK_DESCRIPTOR_MAPPING_SOURCE_INDIRECT_ADDRESS_EXT;
+    mapping.sourceData.indirectAddress.pushOffset = push_data_offset;
+    mapping.sourceData.indirectAddress.addressOffset = address_data_offset;
+
+    VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info = vku::InitStructHelper();
+    mapping_info.mappingCount = 1u;
+    mapping_info.pMappings = &mapping;
+
+    const char *ray_gen = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require // Requires SPIR-V 1.5 (Vulkan 1.2)
+
+        layout(binding = 0, set = 0) uniform accelerationStructureEXT tlas;
+
+        layout(location = 0) rayPayloadEXT vec3 hit;
+
+        void main() {
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, vec3(0,0,1), 0.1, vec3(0,0,1), 1000.0, 0);
+        }
+    )glsl";
+    pipeline.SetGlslRayGenShader(ray_gen, nullptr, &mapping_info);
+
+    const char *miss = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+
+        void main() {
+            hit = vec3(0.1, 0.2, 0.3);
+        }
+    )glsl";
+    pipeline.AddGlslMissShader(miss);
+
+    const char *closest_hit = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+        hitAttributeEXT vec2 baryCoord;
+
+        void main() {
+            const vec3 barycentricCoords = vec3(1.0f - baryCoord.x - baryCoord.y, baryCoord.x, baryCoord.y);
+            hit = barycentricCoords;
+        }
+    )glsl";
+    pipeline.AddGlslClosestHitShader(closest_hit);
+
+    pipeline.AddCreateInfoFlags2(VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT);
+    pipeline.Build();
+
+    vkt::as::BuildGeometryInfoKHR tlas(vkt::as::blueprint::BuildOnDeviceTopLevel(*m_device, *m_default_queue, m_command_buffer));
+
+    VkDeviceAddress tlas_device_address = tlas.GetDstAS()->GetBufferDeviceAddress() + 128;
+
+    VkDeviceAddressRangeEXT device_address_range;
+    device_address_range.address = tlas_device_address;
+    device_address_range.size = 0;
+
+    VkResourceDescriptorInfoEXT resource_info = vku::InitStructHelper();
+    resource_info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    resource_info.data.pAddressRange = &device_address_range;
+
+    vkt::Buffer address_buffer(*m_device, sizeof(uint32_t) * 4, VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT, vkt::device_address);
+    uint8_t *address_data = static_cast<uint8_t *>(address_buffer.Memory().Map());
+
+    VkHostAddressRangeEXT descriptor;
+    descriptor.address = address_data + address_data_offset;
+    descriptor.size = descriptor_size;
+    vk::WriteResourceDescriptorsEXT(*m_device, 1u, &resource_info, &descriptor);
+
+    VkDeviceAddress address = address_buffer.Address();
+
+    VkPushDataInfoEXT push_data_info = vku::InitStructHelper();
+    push_data_info.offset = push_data_offset;
+    push_data_info.data.address = &address;
+    push_data_info.data.size = sizeof(VkDeviceAddress);
+
+    m_command_buffer.Begin();
+    vk::CmdPushDataEXT(m_command_buffer, &push_data_info);
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+    vkt::rt::TraceRaysSbt trace_rays_sbt = pipeline.GetTraceRaysSbt();
+    vk::CmdTraceRaysKHR(m_command_buffer, &trace_rays_sbt.ray_gen_sbt, &trace_rays_sbt.miss_sbt, &trace_rays_sbt.hit_sbt,
+                        &trace_rays_sbt.callable_sbt, 1, 1, 1);
+    m_command_buffer.End();
+    m_errorMonitor->SetDesiredError("VUID-vkCmdTraceRaysKHR-None-11443");
+    m_default_queue->SubmitAndWait(m_command_buffer);
+    m_errorMonitor->VerifyFound();
+}
+
+// Todo
+TEST_F(NegativeGpuAVRayTracing, DISABLED_AccelerationStructureHeapAlignment) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    AddRequiredFeature(vkt::Feature::shaderUntypedPointers);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    RETURN_IF_SKIP(InitGpuAvFramework());
+    if (!CanEnableGpuAV(*this)) {
+        GTEST_SKIP() << "Requirements for GPU-AV are not met";
+    }
+    RETURN_IF_SKIP(InitState());
+
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(heap_props);
+
+    const VkDeviceSize descriptor_size =
+        vk::GetPhysicalDeviceDescriptorSizeEXT(gpu_, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+
+    vkt::rt::Pipeline pipeline(*this, m_device);
+
+    VkDescriptorSetAndBindingMappingEXT mapping = vku::InitStructHelper();
+    mapping.descriptorSet = 0u;
+    mapping.firstBinding = 0u;
+    mapping.bindingCount = 1u;
+    mapping.resourceMask = VK_SPIRV_RESOURCE_TYPE_ACCELERATION_STRUCTURE_BIT_EXT;
+    mapping.source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT;
+    mapping.sourceData.constantOffset = {};
+
+    VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info = vku::InitStructHelper();
+    mapping_info.mappingCount = 1u;
+    mapping_info.pMappings = &mapping;
+
+    const char *ray_gen = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require // Requires SPIR-V 1.5 (Vulkan 1.2)
+        #extension GL_EXT_descriptor_heap : require
+
+        layout(binding = 0, set = 0) uniform accelerationStructureEXT tlas[];
+
+        layout(location = 0) rayPayloadEXT vec3 hit;
+
+        void main() {
+            traceRayEXT(tlas[0], gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, vec3(0,0,1), 0.1, vec3(0,0,1), 1000.0, 0);
+        }
+    )glsl";
+    pipeline.SetGlslRayGenShader(ray_gen, nullptr, &mapping_info);
+
+    /*const std::string ray_gen = R"(
+               OpCapability UntypedPointersKHR
+               OpCapability RayTracingKHR
+               OpCapability DescriptorHeapEXT
+               OpExtension "SPV_EXT_descriptor_heap"
+               OpExtension "SPV_KHR_ray_tracing"
+               OpExtension "SPV_KHR_untyped_pointers"
+          %1 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint RayGenerationKHR %4 "main" %7 %28
+               OpSource GLSL 460
+               OpSourceExtension "GL_EXT_descriptor_heap"
+               OpSourceExtension "GL_EXT_ray_tracing"
+               OpName %4 "main"
+               OpName %7 "resource_heap"
+               OpName %28 "hit"
+               OpDecorate %7 BuiltIn ResourceHeapEXT
+               OpDecorateId %14 ArrayStrideIdEXT %13
+          %2 = OpTypeVoid
+          %3 = OpTypeFunction %2
+          %6 = OpTypeUntypedPointerKHR UniformConstant
+          %7 = OpUntypedVariableKHR %6 UniformConstant
+          %8 = OpTypeInt 32 1
+          %9 = OpConstant %8 0
+         %10 = OpTypeAccelerationStructureKHR
+         %11 = OpTypeUntypedPointerKHR Uniform
+         %13 = OpConstantSizeOfEXT %8 %10
+         %14 = OpTypeRuntimeArray %10
+         %16 = OpTypeInt 32 0
+         %17 = OpConstant %16 1
+         %18 = OpConstant %16 255
+         %19 = OpConstant %16 0
+         %20 = OpTypeFloat 32
+         %21 = OpTypeVector %20 3
+         %22 = OpConstant %20 0
+         %23 = OpConstant %20 1
+         %24 = OpConstantComposite %21 %22 %22 %23
+         %25 = OpConstant %20 0.100000001
+         %26 = OpConstant %20 1000
+         %27 = OpTypePointer RayPayloadKHR %21
+         %28 = OpVariable %27 RayPayloadKHR
+          %4 = OpFunction %2 None %3
+          %5 = OpLabel
+         %12 = OpUntypedAccessChainKHR %11 %14 %7 %9
+         %15 = OpLoad %10 %12
+               OpTraceRayKHR %15 %17 %18 %19 %19 %19 %24 %25 %24 %26 %28
+               OpReturn
+               OpFunctionEnd
+        )";
+    pipeline.AddSpirvRayGenShader(ray_gen.c_str(), "main");*/
+
+    const char *miss = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+
+        void main() {
+            hit = vec3(0.1, 0.2, 0.3);
+        }
+    )glsl";
+    pipeline.AddGlslMissShader(miss);
+
+    const char *closest_hit = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+        hitAttributeEXT vec2 baryCoord;
+
+        void main() {
+            const vec3 barycentricCoords = vec3(1.0f - baryCoord.x - baryCoord.y, baryCoord.x, baryCoord.y);
+            hit = barycentricCoords;
+        }
+    )glsl";
+    pipeline.AddGlslClosestHitShader(closest_hit);
+
+    pipeline.AddCreateInfoFlags2(VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT);
+    pipeline.Build();
+
+    vkt::as::BuildGeometryInfoKHR tlas(vkt::as::blueprint::BuildOnDeviceTopLevel(*m_device, *m_default_queue, m_command_buffer));
+
+    VkDeviceSize heap_size = heap_props.bufferDescriptorAlignment + heap_props.minResourceHeapReservedRange;
+    heap_size = Align(heap_size, heap_props.bufferDescriptorAlignment);
+    heap_size = Align(heap_size, heap_props.imageDescriptorAlignment);
+
+    VkBufferUsageFlags2CreateInfo buffer_usage = vku::InitStructHelper();
+    buffer_usage.usage = VK_BUFFER_USAGE_2_DESCRIPTOR_HEAP_BIT_EXT | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+    VkMemoryAllocateFlagsInfo allocate_flag_info = vku::InitStructHelper();
+    allocate_flag_info.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+    vkt::Buffer resource_heap(*m_device, vkt::Buffer::CreateInfo(heap_size, 0, {}, &buffer_usage),
+                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &allocate_flag_info);
+    uint8_t *heap_data = static_cast<uint8_t *>(resource_heap.Memory().Map());
+
+    VkDeviceAddress tlas_device_address = tlas.GetDstAS()->GetBufferDeviceAddress();
+
+    VkDeviceAddressRangeEXT device_address_range;
+    device_address_range.address = tlas_device_address;
+    device_address_range.size = descriptor_size;
+
+    VkResourceDescriptorInfoEXT resource_info = vku::InitStructHelper();
+    resource_info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    resource_info.data.pAddressRange = &device_address_range;
+
+    VkHostAddressRangeEXT descriptor;
+    descriptor.address = heap_data;
+    descriptor.size = descriptor_size;
+
+    vk::WriteResourceDescriptorsEXT(*m_device, 1u, &resource_info, &descriptor);
+
+    VkBindHeapInfoEXT bind_resource_info = vku::InitStructHelper();
+    bind_resource_info.heapRange.address = resource_heap.Address();
+    bind_resource_info.heapRange.size = resource_heap.CreateInfo().size;
+    bind_resource_info.reservedRangeOffset = resource_heap.CreateInfo().size - heap_props.minResourceHeapReservedRange;
+    bind_resource_info.reservedRangeSize = heap_props.minResourceHeapReservedRange;
+
+    m_command_buffer.Begin();
+    vk::CmdBindResourceHeapEXT(m_command_buffer, &bind_resource_info);
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+    vkt::rt::TraceRaysSbt trace_rays_sbt = pipeline.GetTraceRaysSbt();
+    vk::CmdTraceRaysKHR(m_command_buffer, &trace_rays_sbt.ray_gen_sbt, &trace_rays_sbt.miss_sbt, &trace_rays_sbt.hit_sbt,
+                        &trace_rays_sbt.callable_sbt, 1, 1, 1);
+    m_command_buffer.End();
+    m_errorMonitor->SetDesiredError("VUID-RuntimeSpirv-Result-11350");
+    m_default_queue->SubmitAndWait(m_command_buffer);
+    m_errorMonitor->VerifyFound();
+}
+
 TEST_F(NegativeGpuAVRayTracing, BLASBuiltAndUsedInTLAS) {
     TEST_DESCRIPTION("In the same vkCmdBuildAccelerationStructures, build a BLAS and also use it in a TLAS build");
 
@@ -2075,6 +2522,488 @@ TEST_F(NegativeGpuAVRayTracing, BLASUpdatedAndUsedInTLAS) {
     ASSERT_EQ(debug_buffer_ptr[0], 1);  // Ray gen shader invocations count
     ASSERT_EQ(debug_buffer_ptr[1], 1);  // Miss shader invocations count
     ASSERT_EQ(debug_buffer_ptr[2], 0);  // Closest hit shader invocations count
+}
+
+// This gets a device lost, because the VUID is only caught in post processing
+TEST_F(NegativeGpuAVRayTracing, DISABLED_ShaderRecordAddress) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    VkValidationFeaturesEXT validation_features = GetGpuAvValidationFeatures();
+    RETURN_IF_SKIP(InitFrameworkForRayTracingTest(&validation_features));
+    if (!CanEnableGpuAV(*this)) {
+        GTEST_SKIP() << "Requirements for GPU-AV are not met";
+    }
+    RETURN_IF_SKIP(InitState());
+
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(heap_props);
+
+    const uint32_t shader_record_address_offset_1 = 0u;
+    const uint32_t shader_record_address_offset_2 = 64u;
+
+    const VkDeviceSize descriptor_size =
+        vk::GetPhysicalDeviceDescriptorSizeEXT(gpu_, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    const VkDeviceSize reserved_offset = Align(descriptor_size, heap_props.resourceHeapAlignment);
+
+    const VkDeviceSize heap_size = reserved_offset + heap_props.minResourceHeapReservedRange;
+    vkt::Buffer heap(*m_device, heap_size, VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT, vkt::device_address);
+    uint8_t *heap_data = static_cast<uint8_t *>(heap.Memory().Map());
+
+    vkt::rt::Pipeline pipeline(*this, m_device);
+
+    VkDescriptorSetAndBindingMappingEXT mappings[3];
+    mappings[0] = vku::InitStructHelper();
+    mappings[0].descriptorSet = 0u;
+    mappings[0].firstBinding = 0u;
+    mappings[0].bindingCount = 1u;
+    mappings[0].resourceMask = VK_SPIRV_RESOURCE_TYPE_ACCELERATION_STRUCTURE_BIT_EXT;
+    mappings[0].source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT;
+    mappings[0].sourceData.constantOffset = {};
+    mappings[1] = vku::InitStructHelper();
+    mappings[1].descriptorSet = 1u;
+    mappings[1].firstBinding = 0u;
+    mappings[1].bindingCount = 1u;
+    mappings[1].resourceMask = VK_SPIRV_RESOURCE_TYPE_ALL_EXT;
+    mappings[1].source = VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT;
+    mappings[1].sourceData.shaderRecordAddressOffset = shader_record_address_offset_1;
+    mappings[2] = vku::InitStructHelper();
+    mappings[2].descriptorSet = 2u;
+    mappings[2].firstBinding = 0u;
+    mappings[2].bindingCount = 1u;
+    mappings[2].resourceMask = VK_SPIRV_RESOURCE_TYPE_ALL_EXT;
+    mappings[2].source = VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT;
+    mappings[2].sourceData.shaderRecordAddressOffset = shader_record_address_offset_2;
+
+    VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info = vku::InitStructHelper();
+    mapping_info.mappingCount = 3u;
+    mapping_info.pMappings = mappings;
+
+    const char *ray_gen = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require // Requires SPIR-V 1.5 (Vulkan 1.2)
+
+        layout(binding = 0, set = 0) uniform accelerationStructureEXT tlas;
+
+        layout(location = 0) rayPayloadEXT vec3 hit;
+
+        layout(set = 1, binding = 0) buffer A { uint a; };
+        layout(set = 2, binding = 0) buffer B { uint b; };
+
+        void main() {
+            b = a;
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, vec3(0,0,1), 0.1, vec3(0,0,1), 1000.0, 0);
+        }
+    )glsl";
+    pipeline.SetGlslRayGenShader(ray_gen, nullptr, &mapping_info);
+
+    const char *miss = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+
+        void main() {
+            hit = vec3(0.1, 0.2, 0.3);
+        }
+    )glsl";
+    pipeline.AddGlslMissShader(miss);
+
+    const char *closest_hit = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+        hitAttributeEXT vec2 baryCoord;
+
+        void main() {
+            const vec3 barycentricCoords = vec3(1.0f - baryCoord.x - baryCoord.y, baryCoord.x, baryCoord.y);
+            hit = barycentricCoords;
+        }
+    )glsl";
+    pipeline.AddGlslClosestHitShader(closest_hit);
+
+    pipeline.AddCreateInfoFlags2(VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT);
+    pipeline.SetShaderRecordDataSize(256u);
+    pipeline.Build();
+
+    vkt::as::BuildGeometryInfoKHR tlas(vkt::as::blueprint::BuildOnDeviceTopLevel(*m_device, *m_default_queue, m_command_buffer));
+
+    VkDeviceAddress tlas_device_address = tlas.GetDstAS()->GetBufferDeviceAddress();
+
+    VkDeviceAddressRangeEXT device_address_range;
+    device_address_range.address = tlas_device_address;
+    device_address_range.size = 0;
+
+    VkResourceDescriptorInfoEXT resource_info = vku::InitStructHelper();
+    resource_info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    resource_info.data.pAddressRange = &device_address_range;
+
+    VkHostAddressRangeEXT descriptor;
+    descriptor.address = heap_data;
+    descriptor.size = descriptor_size;
+    vk::WriteResourceDescriptorsEXT(*m_device, 1u, &resource_info, &descriptor);
+
+    VkBindHeapInfoEXT bind_heap_info = vku::InitStructHelper();
+    bind_heap_info.heapRange.address = heap.Address();
+    bind_heap_info.heapRange.size = heap_size;
+    bind_heap_info.reservedRangeOffset = reserved_offset;
+    bind_heap_info.reservedRangeSize = heap_props.minResourceHeapReservedRange;
+
+    vkt::Buffer buffer1(*m_device, sizeof(uint32_t), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT_KHR, vkt::device_address);
+    uint32_t *data1 = static_cast<uint32_t *>(buffer1.Memory().Map());
+    *data1 = 48u;
+
+    vkt::Buffer buffer2(*m_device, sizeof(uint32_t), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT_KHR, vkt::device_address);
+    uint32_t *data2 = static_cast<uint32_t *>(buffer2.Memory().Map());
+
+    VkDeviceAddress address1 = buffer1.Address();
+    //VkDeviceAddress address2 = buffer2.Address();
+
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rt_pipeline_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(rt_pipeline_props);
+
+    uint8_t *shader_record_data =
+        const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(pipeline.GetTraceRaysSbtBuffer().Memory().Map()));
+    uint32_t shader_record_offset = rt_pipeline_props.shaderGroupHandleSize;
+    uint32_t offset1 = shader_record_offset + shader_record_address_offset_1;
+    //uint32_t offset2 = shader_record_offset + shader_record_address_offset_2;
+    memcpy(shader_record_data + offset1, &address1, sizeof(VkDeviceAddress));
+    //memcpy(shader_record_data + offset2, &address2, sizeof(VkDeviceAddress));
+
+    m_command_buffer.Begin();
+    vk::CmdBindResourceHeapEXT(m_command_buffer, &bind_heap_info);
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+    vkt::rt::TraceRaysSbt trace_rays_sbt = pipeline.GetTraceRaysSbt();
+    vk::CmdTraceRaysKHR(m_command_buffer, &trace_rays_sbt.ray_gen_sbt, &trace_rays_sbt.miss_sbt, &trace_rays_sbt.hit_sbt,
+                        &trace_rays_sbt.callable_sbt, 1, 1, 1);
+    m_command_buffer.End();
+
+    m_errorMonitor->SetDesiredError("VUID-vkCmdTraceRaysKHR-None-11319");
+    m_default_queue->SubmitAndWait(m_command_buffer);
+    m_errorMonitor->VerifyFound();
+
+    ASSERT_EQ(*data1, *data2);
+}
+
+TEST_F(NegativeGpuAVRayTracing, ShaderRecordAddressOOB) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    VkValidationFeaturesEXT validation_features = GetGpuAvValidationFeatures();
+    RETURN_IF_SKIP(InitFrameworkForRayTracingTest(&validation_features));
+    if (!CanEnableGpuAV(*this)) {
+        GTEST_SKIP() << "Requirements for GPU-AV are not met";
+    }
+    RETURN_IF_SKIP(InitState());
+
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(heap_props);
+
+    const uint32_t shader_record_address_offset_1 = 32u;
+    const uint32_t shader_record_address_offset_2 = 72u;
+
+    const VkDeviceSize descriptor_size =
+        vk::GetPhysicalDeviceDescriptorSizeEXT(gpu_, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    const VkDeviceSize reserved_offset = Align(descriptor_size, heap_props.resourceHeapAlignment);
+
+    const VkDeviceSize heap_size = reserved_offset + heap_props.minResourceHeapReservedRange;
+    vkt::Buffer heap(*m_device, heap_size, VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT, vkt::device_address);
+    uint8_t *heap_data = static_cast<uint8_t *>(heap.Memory().Map());
+
+    vkt::rt::Pipeline pipeline(*this, m_device);
+
+    VkDescriptorSetAndBindingMappingEXT mappings[3];
+    mappings[0] = vku::InitStructHelper();
+    mappings[0].descriptorSet = 0u;
+    mappings[0].firstBinding = 0u;
+    mappings[0].bindingCount = 1u;
+    mappings[0].resourceMask = VK_SPIRV_RESOURCE_TYPE_ACCELERATION_STRUCTURE_BIT_EXT;
+    mappings[0].source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT;
+    mappings[0].sourceData.constantOffset = {};
+    mappings[1] = vku::InitStructHelper();
+    mappings[1].descriptorSet = 1u;
+    mappings[1].firstBinding = 0u;
+    mappings[1].bindingCount = 1u;
+    mappings[1].resourceMask = VK_SPIRV_RESOURCE_TYPE_ALL_EXT;
+    mappings[1].source = VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT;
+    mappings[1].sourceData.shaderRecordAddressOffset = shader_record_address_offset_1;
+    mappings[2] = vku::InitStructHelper();
+    mappings[2].descriptorSet = 2u;
+    mappings[2].firstBinding = 0u;
+    mappings[2].bindingCount = 1u;
+    mappings[2].resourceMask = VK_SPIRV_RESOURCE_TYPE_ALL_EXT;
+    mappings[2].source = VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT;
+    mappings[2].sourceData.shaderRecordAddressOffset = shader_record_address_offset_2;
+
+    VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info = vku::InitStructHelper();
+    mapping_info.mappingCount = 3u;
+    mapping_info.pMappings = mappings;
+
+    const char *ray_gen = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require // Requires SPIR-V 1.5 (Vulkan 1.2)
+
+        layout(binding = 0, set = 0) uniform accelerationStructureEXT tlas;
+
+        layout(location = 0) rayPayloadEXT vec3 hit;
+
+        layout(set = 1, binding = 0) buffer A { uvec2 a; };
+        layout(set = 2, binding = 0) buffer B { uvec2 b; };
+
+        void main() {
+            b.y = a.x;
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, vec3(0,0,1), 0.1, vec3(0,0,1), 1000.0, 0);
+        }
+    )glsl";
+    pipeline.SetGlslRayGenShader(ray_gen, nullptr, &mapping_info);
+
+    const char *miss = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+
+        void main() {
+            hit = vec3(0.1, 0.2, 0.3);
+        }
+    )glsl";
+    pipeline.AddGlslMissShader(miss);
+
+    const char *closest_hit = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+        hitAttributeEXT vec2 baryCoord;
+
+        void main() {
+            const vec3 barycentricCoords = vec3(1.0f - baryCoord.x - baryCoord.y, baryCoord.x, baryCoord.y);
+            hit = barycentricCoords;
+        }
+    )glsl";
+    pipeline.AddGlslClosestHitShader(closest_hit);
+
+    pipeline.AddCreateInfoFlags2(VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT);
+    pipeline.SetShaderRecordDataSize(256u);
+    pipeline.Build();
+
+    vkt::as::BuildGeometryInfoKHR tlas(vkt::as::blueprint::BuildOnDeviceTopLevel(*m_device, *m_default_queue, m_command_buffer));
+
+    VkDeviceAddress tlas_device_address = tlas.GetDstAS()->GetBufferDeviceAddress();
+
+    VkDeviceAddressRangeEXT device_address_range;
+    device_address_range.address = tlas_device_address;
+    device_address_range.size = 0;
+
+    VkResourceDescriptorInfoEXT resource_info = vku::InitStructHelper();
+    resource_info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    resource_info.data.pAddressRange = &device_address_range;
+
+    VkHostAddressRangeEXT descriptor;
+    descriptor.address = heap_data;
+    descriptor.size = descriptor_size;
+    vk::WriteResourceDescriptorsEXT(*m_device, 1u, &resource_info, &descriptor);
+
+    VkBindHeapInfoEXT bind_heap_info = vku::InitStructHelper();
+    bind_heap_info.heapRange.address = heap.Address();
+    bind_heap_info.heapRange.size = heap_size;
+    bind_heap_info.reservedRangeOffset = reserved_offset;
+    bind_heap_info.reservedRangeSize = heap_props.minResourceHeapReservedRange;
+
+    vkt::Buffer buffer1(*m_device, sizeof(uint32_t), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT_KHR, vkt::device_address);
+    vkt::Buffer buffer2(*m_device, sizeof(uint32_t), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT_KHR, vkt::device_address);
+
+    VkDeviceAddress address1 = buffer1.Address();
+    VkDeviceAddress address2 = buffer2.Address();
+
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rt_pipeline_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(rt_pipeline_props);
+
+    uint8_t *shader_record_data =
+        const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(pipeline.GetTraceRaysSbtBuffer().Memory().Map()));
+    uint32_t shader_record_offset = rt_pipeline_props.shaderGroupHandleSize;
+    uint32_t offset1 = shader_record_offset + shader_record_address_offset_1;
+    uint32_t offset2 = shader_record_offset + shader_record_address_offset_2;
+    memcpy(shader_record_data + offset1, &address1, sizeof(VkDeviceAddress));
+    memcpy(shader_record_data + offset2, &address2, sizeof(VkDeviceAddress));
+
+    m_command_buffer.Begin();
+    vk::CmdBindResourceHeapEXT(m_command_buffer, &bind_heap_info);
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+    vkt::rt::TraceRaysSbt trace_rays_sbt = pipeline.GetTraceRaysSbt();
+    vk::CmdTraceRaysKHR(m_command_buffer, &trace_rays_sbt.ray_gen_sbt, &trace_rays_sbt.miss_sbt, &trace_rays_sbt.hit_sbt,
+                        &trace_rays_sbt.callable_sbt, 1, 1, 1);
+    m_command_buffer.End();
+
+    m_errorMonitor->SetDesiredError("VUID-vkCmdTraceRaysKHR-None-11320");
+    m_default_queue->SubmitAndWait(m_command_buffer);
+    m_errorMonitor->VerifyFound();
+}
+
+// Not yet implemented
+TEST_F(NegativeGpuAVRayTracing, DISABLED_ShaderRecordData) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::rayTracingPipeline);
+    AddRequiredFeature(vkt::Feature::accelerationStructure);
+    AddRequiredFeature(vkt::Feature::bufferDeviceAddress);
+    AddRequiredFeature(vkt::Feature::descriptorHeap);
+    VkValidationFeaturesEXT validation_features = GetGpuAvValidationFeatures();
+    RETURN_IF_SKIP(InitFrameworkForRayTracingTest(&validation_features));
+    if (!CanEnableGpuAV(*this)) {
+        GTEST_SKIP() << "Requirements for GPU-AV are not met";
+    }
+    RETURN_IF_SKIP(InitState());
+
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT heap_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(heap_props);
+
+    const uint32_t shader_record_address_offset = 0u;
+    const uint32_t shader_record_data_offset = 64u;
+
+    const VkDeviceSize descriptor_size =
+        vk::GetPhysicalDeviceDescriptorSizeEXT(gpu_, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    const VkDeviceSize reserved_offset = Align(descriptor_size, heap_props.resourceHeapAlignment);
+
+    const VkDeviceSize heap_size = reserved_offset + heap_props.minResourceHeapReservedRange;
+    vkt::Buffer heap(*m_device, heap_size, VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT, vkt::device_address);
+    uint8_t *heap_data = static_cast<uint8_t *>(heap.Memory().Map());
+
+    vkt::rt::Pipeline pipeline(*this, m_device);
+
+    VkDescriptorSetAndBindingMappingEXT mappings[3];
+    mappings[0] = vku::InitStructHelper();
+    mappings[0].descriptorSet = 0u;
+    mappings[0].firstBinding = 0u;
+    mappings[0].bindingCount = 1u;
+    mappings[0].resourceMask = VK_SPIRV_RESOURCE_TYPE_ACCELERATION_STRUCTURE_BIT_EXT;
+    mappings[0].source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT;
+    mappings[0].sourceData.constantOffset = {};
+    mappings[1] = vku::InitStructHelper();
+    mappings[1].descriptorSet = 1u;
+    mappings[1].firstBinding = 0u;
+    mappings[1].bindingCount = 1u;
+    mappings[1].resourceMask = VK_SPIRV_RESOURCE_TYPE_ALL_EXT;
+    mappings[1].source = VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_ADDRESS_EXT;
+    mappings[1].sourceData.shaderRecordAddressOffset = shader_record_address_offset;
+    mappings[2] = vku::InitStructHelper();
+    mappings[2].descriptorSet = 2u;
+    mappings[2].firstBinding = 0u;
+    mappings[2].bindingCount = 1u;
+    mappings[2].resourceMask = VK_SPIRV_RESOURCE_TYPE_ALL_EXT;
+    mappings[2].source = VK_DESCRIPTOR_MAPPING_SOURCE_SHADER_RECORD_DATA_EXT;
+    mappings[2].sourceData.shaderRecordAddressOffset = shader_record_data_offset;
+
+    VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info = vku::InitStructHelper();
+    mapping_info.mappingCount = 3u;
+    mapping_info.pMappings = mappings;
+
+    const char *ray_gen = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require // Requires SPIR-V 1.5 (Vulkan 1.2)
+
+        layout(binding = 0, set = 0) uniform accelerationStructureEXT tlas;
+
+        layout(location = 0) rayPayloadEXT vec3 hit;
+
+        layout(set = 1, binding = 0) buffer A { uint a; };
+        layout(set = 2, binding = 0) uniform B { uint b; };
+
+        void main() {
+            a = b;
+            traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, vec3(0,0,1), 0.1, vec3(0,0,1), 1000.0, 0);
+        }
+    )glsl";
+    pipeline.SetGlslRayGenShader(ray_gen, nullptr, &mapping_info);
+
+    const char *miss = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+
+        void main() {
+            hit = vec3(0.1, 0.2, 0.3);
+        }
+    )glsl";
+    pipeline.AddGlslMissShader(miss);
+
+    const char *closest_hit = R"glsl(
+        #version 460
+        #extension GL_EXT_ray_tracing : require
+
+        layout(location = 0) rayPayloadInEXT vec3 hit;
+        hitAttributeEXT vec2 baryCoord;
+
+        void main() {
+            const vec3 barycentricCoords = vec3(1.0f - baryCoord.x - baryCoord.y, baryCoord.x, baryCoord.y);
+            hit = barycentricCoords;
+        }
+    )glsl";
+    pipeline.AddGlslClosestHitShader(closest_hit);
+
+    pipeline.AddCreateInfoFlags2(VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT);
+    pipeline.SetShaderRecordDataSize(shader_record_data_offset);
+    pipeline.Build();
+
+    vkt::as::BuildGeometryInfoKHR tlas(vkt::as::blueprint::BuildOnDeviceTopLevel(*m_device, *m_default_queue, m_command_buffer));
+
+    VkDeviceAddress tlas_device_address = tlas.GetDstAS()->GetBufferDeviceAddress();
+
+    VkDeviceAddressRangeEXT device_address_range;
+    device_address_range.address = tlas_device_address;
+    device_address_range.size = 0;
+
+    VkResourceDescriptorInfoEXT resource_info = vku::InitStructHelper();
+    resource_info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    resource_info.data.pAddressRange = &device_address_range;
+
+    VkHostAddressRangeEXT descriptor;
+    descriptor.address = heap_data;
+    descriptor.size = descriptor_size;
+    vk::WriteResourceDescriptorsEXT(*m_device, 1u, &resource_info, &descriptor);
+
+    VkBindHeapInfoEXT bind_heap_info = vku::InitStructHelper();
+    bind_heap_info.heapRange.address = heap.Address();
+    bind_heap_info.heapRange.size = heap_size;
+    bind_heap_info.reservedRangeOffset = reserved_offset;
+    bind_heap_info.reservedRangeSize = heap_props.minResourceHeapReservedRange;
+
+    vkt::Buffer buffer(*m_device, sizeof(uint32_t), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT_KHR, vkt::device_address);
+    uint32_t *data = static_cast<uint32_t *>(buffer.Memory().Map());
+    *data = 48u;
+
+    VkDeviceAddress address = buffer.Address();
+
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rt_pipeline_props = vku::InitStructHelper();
+    GetPhysicalDeviceProperties2(rt_pipeline_props);
+
+    uint8_t *shader_record_data =
+        const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(pipeline.GetTraceRaysSbtBuffer().Memory().Map()));
+    uint32_t shader_record_offset = rt_pipeline_props.shaderGroupHandleSize;
+    uint32_t offset1 = shader_record_offset + shader_record_address_offset;
+    uint32_t offset2 = shader_record_offset + shader_record_data_offset;
+    memcpy(shader_record_data + offset1, &address, sizeof(VkDeviceAddress));
+    shader_record_data[offset2] = 123;
+
+    m_command_buffer.Begin();
+    vk::CmdBindResourceHeapEXT(m_command_buffer, &bind_heap_info);
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+    vkt::rt::TraceRaysSbt trace_rays_sbt = pipeline.GetTraceRaysSbt();
+    vk::CmdTraceRaysKHR(m_command_buffer, &trace_rays_sbt.ray_gen_sbt, &trace_rays_sbt.miss_sbt, &trace_rays_sbt.hit_sbt,
+                        &trace_rays_sbt.callable_sbt, 1, 1, 1);
+    m_command_buffer.End();
+
+    m_errorMonitor->SetDesiredError("VUID-vkCmdTraceRaysKHR-None-11398");
+    m_default_queue->SubmitAndWait(m_command_buffer);
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(NegativeGpuAVRayTracing, TLASinBLASlist) {
