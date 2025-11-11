@@ -2467,3 +2467,130 @@ TEST_F(PositiveShaderSpirv, ShaderFma) {
     pipe.cs_ = VkShaderObj(this, spv_source, VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_1, SPV_SOURCE_ASM);
     pipe.CreateComputePipeline();
 }
+
+TEST_F(PositiveShaderSpirv, test8) {
+    SetTargetApiVersion(VK_API_VERSION_1_1);
+    AddRequiredExtensions(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME);
+    AddRequiredExtensions(VK_EXT_SHADER_FLOAT8_EXTENSION_NAME);
+    AddRequiredExtensions(VK_KHR_8BIT_STORAGE_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::storageBuffer8BitAccess);
+    AddRequiredFeature(vkt::Feature::shaderFloat8);
+    AddRequiredFeature(vkt::Feature::shaderInt8);
+    RETURN_IF_SKIP(Init());
+
+    const char *cs_source = R"glsl(
+        #version 450
+        #extension GL_EXT_float_e4m3 : require
+
+        layout(set = 0, binding = 0) buffer B {
+            floate4m3_t b1;
+            // floate4m3_t b2;
+            float b2;
+        };
+
+        layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+        void main() {
+            floate4m3_t f8_val = b1;
+
+            float f32_val = float(f8_val);
+            b2 = f32_val + 1.0f;
+            // float f32_result = f32_val + 1.0f;
+
+            // floate4m3_t f8_result = floate4m3_t(f32_result);
+            // b2 = f8_result;
+        }
+    )glsl";
+
+    {
+
+        CreateComputePipelineHelper pipe(*this);
+        pipe.cs_ = VkShaderObj(this, cs_source, VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_1);
+        pipe.dsl_bindings_[0] = {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr};
+        pipe.CreateComputePipeline();
+
+        VkBufferCreateInfo bci = vku::InitStructHelper();
+        bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bci.size = 1024;
+        vkt::Buffer buffer(*m_device, bci, kHostVisibleMemProps);
+        pipe.descriptor_set_.WriteDescriptorBufferInfo(0, buffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        pipe.descriptor_set_.UpdateDescriptorSets();
+
+        auto ptr = (uint8_t*)buffer.Memory().Map();
+        memset(ptr, 0, 8);
+        ptr[0] = 1;
+
+        m_command_buffer.Begin();
+        vk::CmdBindDescriptorSets(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe.pipeline_layout_, 0, 1,
+        &pipe.descriptor_set_.set_, 0, nullptr);
+        vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+        vk::CmdDispatch(m_command_buffer, 1, 1, 1);
+        m_command_buffer.End();
+
+        m_default_queue->SubmitAndWait(m_command_buffer);
+
+        printf("0x%X 0x%X 0x%X 0x%X\n", ptr[0], ptr[1],ptr[2],ptr[3]);
+        printf("0x%X 0x%X 0x%X 0x%X\n", ptr[4], ptr[5],ptr[6],ptr[7]);
+    }
+}
+
+TEST_F(PositiveShaderSpirv, test16) {
+    SetTargetApiVersion(VK_API_VERSION_1_1);
+    AddRequiredExtensions(VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::shaderFloat16);
+    AddRequiredFeature(vkt::Feature::storageBuffer16BitAccess);
+    RETURN_IF_SKIP(Init());
+
+    const char *cs_source = R"glsl(
+        #version 450
+        #extension GL_EXT_shader_16bit_storage: enable
+        #extension GL_EXT_shader_explicit_arithmetic_types_float16: enable
+
+        layout(set = 0, binding = 0) buffer B {
+            float16_t b1;
+            float b2;
+            // float16_t b2;
+        };
+
+        layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+        void main() {
+            float16_t f_val = b1;
+
+            float f32_val = float(f_val);
+            b2 = f32_val + 1.0f;
+            // float f32_result = f32_val + 1.0f;
+
+            // float16_t f_result = float16_t(f32_result);
+            // b2 = f_result;
+        }
+    )glsl";
+
+    CreateComputePipelineHelper pipe(*this);
+    pipe.cs_ = VkShaderObj(this, cs_source, VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_1);
+    pipe.dsl_bindings_[0] = {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr};
+    pipe.CreateComputePipeline();
+
+    VkBufferCreateInfo bci = vku::InitStructHelper();
+    bci.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    bci.size = 1024;
+    vkt::Buffer buffer(*m_device, bci, kHostVisibleMemProps);
+    pipe.descriptor_set_.WriteDescriptorBufferInfo(0, buffer, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    pipe.descriptor_set_.UpdateDescriptorSets();
+
+    auto ptr = (uint8_t*)buffer.Memory().Map();
+    memset(ptr, 0, 8);
+    ptr[0] = 1;
+
+    m_command_buffer.Begin();
+    vk::CmdBindDescriptorSets(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe.pipeline_layout_, 0, 1,
+                              &pipe.descriptor_set_.set_, 0, nullptr);
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+    vk::CmdDispatch(m_command_buffer, 1, 1, 1);
+    m_command_buffer.End();
+
+    m_default_queue->SubmitAndWait(m_command_buffer);
+
+    printf("0x%X 0x%X 0x%X 0x%X\n", ptr[0], ptr[1],ptr[2],ptr[3]);
+    printf("0x%X 0x%X 0x%X 0x%X\n", ptr[4], ptr[5],ptr[6],ptr[7]);
+}
