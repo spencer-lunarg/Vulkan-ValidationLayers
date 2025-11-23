@@ -26,8 +26,10 @@ void GpuAVDescriptorClassGeneralBufferCoopMat::InitCooperativeMatrixKHR(bool saf
     AddRequiredExtensions(VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME);
     AddRequiredFeature(vkt::Feature::cooperativeMatrix);
     AddRequiredFeature(vkt::Feature::vulkanMemoryModel);
-    RETURN_IF_SKIP(InitGpuAvFramework({}, safe_mode));
-    RETURN_IF_SKIP(InitState());
+    // RETURN_IF_SKIP(InitGpuAvFramework({}, safe_mode));
+    // RETURN_IF_SKIP(InitState());
+    (void)safe_mode;
+    RETURN_IF_SKIP(Init());
 }
 
 void GpuAVDescriptorClassGeneralBufferCoopMat::BasicComputeTest(const char *shader, int source_type, VkDeviceSize buffer_size,
@@ -367,4 +369,253 @@ TEST_F(PositiveGpuAVDescriptorClassGeneralBufferCoopMat, DynamicStrideAndElement
     m_command_buffer.End();
 
     m_default_queue->SubmitAndWait(m_command_buffer);
+}
+void print_uint8_matrix(uint32_t n, uint32_t m, const uint8_t* matrix) {
+    for (uint32_t i = 0; i < n; i++) {
+        for (uint32_t j = 0; j < m; j++) {
+            uint8_t element = matrix[i * m + j];
+            printf("%3hhu ", element);
+        }
+        printf("\n");
+    }
+}
+
+void print_uint32_matrix(uint32_t n, uint32_t m, const uint32_t* matrix) {
+    for (uint32_t i = 0; i < n; i++) {
+        for (uint32_t j = 0; j < m; j++) {
+            uint32_t element = matrix[i * m + j];
+            printf("%5u ", element);
+        }
+        printf("\n");
+    }
+}
+
+TEST_F(PositiveGpuAVDescriptorClassGeneralBufferCoopMat, TEST1) {
+    SetTargetApiVersion(VK_API_VERSION_1_3);
+    AddRequiredFeature(vkt::Feature::shaderInt8);
+    AddRequiredFeature(vkt::Feature::storageBuffer8BitAccess);
+    RETURN_IF_SKIP(InitCooperativeMatrixKHR(false));
+    CooperativeMatrixHelper helper(*this);
+    if (!helper.Has16x16UintProperty()) {
+        GTEST_SKIP() << "16x16 Uint Property not found";
+    }
+    OneOffDescriptorSet descriptor_set(m_device, {{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr}});
+    vkt::PipelineLayout pl(*m_device, {&descriptor_set.layout_});
+
+    std::string css = R"glsl(
+         #version 450 core
+         #pragma use_vulkan_memory_model
+         #extension GL_KHR_shader_subgroup_basic : enable
+         #extension GL_KHR_memory_scope_semantics : enable
+         #extension GL_KHR_cooperative_matrix : enable
+         #extension GL_EXT_shader_explicit_arithmetic_types : enable
+         #extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+         layout(local_size_x = 64) in;
+         layout(set=0, binding=0) coherent buffer InputA { uint8_t x[]; };
+         coopmat<uint8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> matA;
+         void main() {
+            coopMatLoad(matA, x, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+            coopMatStore(matA, x, 256, 16, gl_CooperativeMatrixLayoutRowMajor);
+         }
+    )glsl";
+
+    CreateComputePipelineHelper pipe(*this);
+    pipe.cs_ = VkShaderObj(this, css.c_str(), VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_3);
+    pipe.cp_ci_.layout = pl;
+    pipe.CreateComputePipeline();
+    m_errorMonitor->VerifyFound();
+
+    vkt::Buffer buffer_a(*m_device, 4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, kHostVisibleMemProps);
+
+    auto *ptr8_a = (uint8_t *)buffer_a.Memory().Map();
+    for (int i = 0; i < 128; i++) {
+        ptr8_a[i] = 1;
+    }
+    for (int i = 128; i < 256; i++) {
+        ptr8_a[i] = 5;
+    }
+    for (int i = 256; i < 4096; i++) {
+        ptr8_a[i] = 0;
+    }
+
+    descriptor_set.WriteDescriptorBufferInfo(0, buffer_a, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    descriptor_set.UpdateDescriptorSets();
+
+    m_command_buffer.Begin();
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+    vk::CmdBindDescriptorSets(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pl, 0, 1, &descriptor_set.set_, 0, nullptr);
+    vk::CmdDispatch(m_command_buffer, 1, 1, 1);
+    m_command_buffer.End();
+
+    m_default_queue->SubmitAndWait(m_command_buffer);
+
+    for (uint32_t s = 0; s < 16; s++) {
+        printf("[%u] |", s);
+        for (uint32_t i = 0; i < 64; i++) {
+            printf("%u|", ptr8_a[(s * 64) + i]);
+        }
+        printf("\n");
+    }
+}
+
+TEST_F(PositiveGpuAVDescriptorClassGeneralBufferCoopMat, TEST2) {
+    SetTargetApiVersion(VK_API_VERSION_1_3);
+    AddRequiredFeature(vkt::Feature::shaderInt8);
+    AddRequiredFeature(vkt::Feature::storageBuffer8BitAccess);
+    RETURN_IF_SKIP(InitCooperativeMatrixKHR(false));
+    CooperativeMatrixHelper helper(*this);
+    if (!helper.Has16x16UintProperty()) {
+        GTEST_SKIP() << "16x16 Uint Property not found";
+    }
+
+    OneOffDescriptorSet descriptor_set(m_device, {{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
+                                                  {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
+                                                  {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
+                                                  {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr}});
+    vkt::PipelineLayout pl(*m_device, {&descriptor_set.layout_});
+
+    std::string css = R"glsl(
+         #version 450 core
+         #pragma use_vulkan_memory_model
+         #extension GL_KHR_shader_subgroup_basic : enable
+         #extension GL_KHR_memory_scope_semantics : enable
+         #extension GL_KHR_cooperative_matrix : enable
+         #extension GL_EXT_shader_explicit_arithmetic_types : enable
+         #extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+         layout(local_size_x = 64, local_size_y = 1) in;
+         layout(set=0, binding=0) coherent buffer InputA { uint8_t x[]; } inputA;
+         layout(set=0, binding=1) coherent buffer InputB { uint8_t x[]; } inputB;
+         layout(set=0, binding=2) coherent buffer InputC { uint32_t x[]; } inputC;
+         layout(set=0, binding=3) coherent buffer Output { uint32_t x[]; } outputO;
+         coopmat<int8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> matA1;
+         coopmat<uint8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> matB;
+         coopmat<uint32_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> matC;
+         coopmat<uint32_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> matO;
+         void main() {
+            coopMatLoad(matA1, inputA.x, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+            coopMatLoad(matB, inputB.x, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+            coopMatLoad(matC, inputC.x, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+            matO = coopMatMulAdd(matA1, matB, matC);
+            coopMatStore(matO, outputO.x, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+         }
+    )glsl";
+
+    CreateComputePipelineHelper pipe(*this);
+    pipe.cs_ = VkShaderObj(this, css.c_str(), VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_3);
+    pipe.cp_ci_.layout = pl;
+    pipe.CreateComputePipeline();
+    m_errorMonitor->VerifyFound();
+
+    vkt::Buffer buffer_a(*m_device, 4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, kHostVisibleMemProps);
+    vkt::Buffer buffer_b(*m_device, 4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, kHostVisibleMemProps);
+    vkt::Buffer buffer_c(*m_device, 4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, kHostVisibleMemProps);
+    vkt::Buffer buffer_o(*m_device, 4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, kHostVisibleMemProps);
+
+    auto *ptr8_a = (uint8_t *)buffer_a.Memory().Map();
+    auto *ptr8_b = (uint8_t *)buffer_b.Memory().Map();
+    auto *ptr8_c = (uint8_t *)buffer_c.Memory().Map();
+    auto *ptr8_o = (uint8_t *)buffer_o.Memory().Map();
+    auto *ptr32_c = (uint32_t *)ptr8_c;
+    auto *ptr32_o = (uint32_t *)ptr8_o;
+    for (int i = 0; i < 256; i++) {
+        ptr8_a[i] = 1;
+        ptr8_b[i] = 2;
+    }
+    for (int i = 0; i < 1024; i++) {
+        ptr32_c[i] = 1;
+        ptr32_o[i] = 0;
+    }
+
+    descriptor_set.WriteDescriptorBufferInfo(0, buffer_a, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    descriptor_set.WriteDescriptorBufferInfo(1, buffer_b, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    descriptor_set.WriteDescriptorBufferInfo(2, buffer_c, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    descriptor_set.WriteDescriptorBufferInfo(3, buffer_o, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    descriptor_set.UpdateDescriptorSets();
+
+    m_command_buffer.Begin();
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+    vk::CmdBindDescriptorSets(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pl, 0, 1, &descriptor_set.set_, 0, nullptr);
+    vk::CmdDispatch(m_command_buffer, 1, 1, 1);
+    m_command_buffer.End();
+
+    m_default_queue->SubmitAndWait(m_command_buffer);
+
+    for (uint32_t s = 0; s < 16; s++) {
+        printf("[%u] |", s);
+        for (uint32_t i = 0; i < 64; i++) {
+            printf("%u|", ptr32_o[(s * 64) + i]);
+        }
+        printf("\n");
+    }
+}
+
+TEST_F(PositiveGpuAVDescriptorClassGeneralBufferCoopMat, TEST3) {
+    SetTargetApiVersion(VK_API_VERSION_1_3);
+    AddRequiredFeature(vkt::Feature::shaderInt8);
+    AddRequiredFeature(vkt::Feature::storageBuffer8BitAccess);
+    RETURN_IF_SKIP(InitCooperativeMatrixKHR(false));
+    CooperativeMatrixHelper helper(*this);
+    if (!helper.Has16x16UintProperty()) {
+        GTEST_SKIP() << "16x16 Uint Property not found";
+    }
+    OneOffDescriptorSet descriptor_set(m_device, {{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr}});
+    vkt::PipelineLayout pl(*m_device, {&descriptor_set.layout_});
+
+    std::string css = R"glsl(
+         #version 450 core
+         #pragma use_vulkan_memory_model
+         #extension GL_KHR_shader_subgroup_basic : enable
+         #extension GL_KHR_memory_scope_semantics : enable
+         #extension GL_KHR_cooperative_matrix : enable
+         #extension GL_EXT_shader_explicit_arithmetic_types : enable
+         #extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+         layout(local_size_x = 64) in;
+         layout(set=0, binding=0) coherent buffer InputA { uint8_t x[]; };
+
+         coopmat<uint8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> matA;
+         coopmat<uint8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> matB;
+         coopmat<uint32_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> matC;
+         void main() {
+            coopMatLoad(matA, x, 0, 16, gl_CooperativeMatrixLayoutRowMajor);
+            coopMatLoad(matB, x, 256, 16, gl_CooperativeMatrixLayoutRowMajor);
+            coopMatLoad(matC, x, 512, 64, gl_CooperativeMatrixLayoutRowMajor);
+            matC = coopMatMulAdd(matA, matB, matC);
+            coopMatStore(matC, x, 512, 64, gl_CooperativeMatrixLayoutRowMajor);
+         }
+    )glsl";
+
+    CreateComputePipelineHelper pipe(*this);
+    pipe.cs_ = VkShaderObj(this, css.c_str(), VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_3);
+    pipe.cp_ci_.layout = pl;
+    pipe.CreateComputePipeline();
+    m_errorMonitor->VerifyFound();
+
+    vkt::Buffer buffer_a(*m_device, 4096, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, kHostVisibleMemProps);
+
+    auto* ptr8_a = (uint8_t*)buffer_a.Memory().Map();
+    memset(ptr8_a, 0, 4096);
+    for (int i = 0; i < 256; i++) {
+        ptr8_a[i] = 1;
+    }
+    for (int i = 256; i < 512; i++) {
+        ptr8_a[i] = 2;
+    }
+
+    descriptor_set.WriteDescriptorBufferInfo(0, buffer_a, 0, VK_WHOLE_SIZE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    descriptor_set.UpdateDescriptorSets();
+
+    m_command_buffer.Begin();
+    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+    vk::CmdBindDescriptorSets(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pl, 0, 1, &descriptor_set.set_, 0, nullptr);
+    vk::CmdDispatch(m_command_buffer, 1, 1, 1);
+    m_command_buffer.End();
+
+    m_default_queue->SubmitAndWait(m_command_buffer);
+
+    printf("A\n----------------\n");
+    print_uint8_matrix(16, 16, &ptr8_a[0]);
+    printf("B\n----------------\n");
+    print_uint8_matrix(16, 16, &ptr8_a[256]);
+    printf("C\n----------------\n");
+    print_uint32_matrix(16, 16, (uint32_t*)&ptr8_a[512]);
 }
