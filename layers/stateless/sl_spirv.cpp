@@ -23,9 +23,12 @@
 #include "chassis/dispatch_object.h"
 #include "state_tracker/shader_instruction.h"
 #include "state_tracker/shader_module.h"
+#include "utils/math_utils.h"
+#include "utils/shader_utils.h"
 #include <inttypes.h>
 #include <vulkan/vulkan_core.h>
 #include <set>
+#include <spirv/unified1/spirv.hpp>
 
 namespace stateless {
 
@@ -87,6 +90,7 @@ bool SpirvValidator::Validate(const spirv::Module &module_state, const spirv::St
     skip |= ValidateShaderClock(module_state, stateless_data, loc);
     skip |= ValidateAtomicsTypes(module_state, stateless_data, loc);
     skip |= ValidateFma(module_state, stateless_data, loc);
+    skip |= ValidateCopyMemorySized(module_state, stateless_data, loc);
     skip |= ValidateVariables(module_state, loc);
 
     skip |= ValidateTransformFeedbackDecorations(module_state, loc);
@@ -389,6 +393,43 @@ bool SpirvValidator::ValidateFma(const spirv::Module &module_state, const spirv:
             skip |= LogError("VUID-RuntimeSpirv-shaderFmaFloat64-10979", module_state.handle(), loc,
                              "SPIR-V uses OpFmaKHR with 64-bit floats but shaderFmaFloat64 was not enabled.\n%s\n",
                              module_state.DescribeInstruction(*fma_inst).c_str());
+        }
+    }
+    return skip;
+}
+
+bool SpirvValidator::ValidateCopyMemorySized(const spirv::Module &module_state, const spirv::StatelessData &stateless_data,
+                                 const Location &loc) const {
+    bool skip = false;
+
+    for (const spirv::Instruction *copy_inst : stateless_data.copy_memory_sized_inst) {
+        const spirv::Instruction* constant_inst = module_state.GetAnyConstantDef(copy_inst->Word(3));
+        if (!constant_inst || constant_inst->Opcode() != spv::OpConstant) {
+            continue; // done in GPU-AV
+        }
+        const uint32_t size = constant_inst->GetConstantValue();
+        if (IsIntegerMultipleOf(size, 4)) {
+            continue; // always valid
+        }
+        const spirv::Instruction* target_inst = module_state.FindDef(copy_inst->Word(1));
+        const spirv::Instruction* source_inst = module_state.FindDef(copy_inst->Word(2));
+        if (!target_inst || !source_inst) {
+            continue;
+        }
+        const spv::StorageClass target_sc = target_inst->StorageClass();
+        const spv::StorageClass source_sc = source_inst->StorageClass();
+        const bool allows_16bit = IsIntegerMultipleOf(size, 2);
+
+        if (!Is8BitStorageClassAllowed(enabled_features, target_sc) && (!allows_16bit || !Is16BitStorageClassAllowed(enabled_features, target_sc))) {
+            skip |= LogError("VUID-RuntimeSpirv-Size-11165", module_state.handle(), loc,
+                             "SPIR-V uses OpCopyMemorySized with a constant Size of %" PRIu32 ", but the Target storage class (%s) is only allowed if the %s feature is enabled.\n%s\n",
+                             size, string_SpvStorageClass(target_sc),  Required8or16BitStorageClassFeature(target_sc, allows_16bit),
+                             module_state.DescribeInstruction(*copy_inst).c_str());
+        } else if (target_sc != source_sc && !Is8BitStorageClassAllowed(enabled_features, source_sc) && (!allows_16bit || !Is16BitStorageClassAllowed(enabled_features, source_sc))) {
+            skip |= LogError("VUID-RuntimeSpirv-Size-11165", module_state.handle(), loc,
+                             "SPIR-V uses OpCopyMemorySized with a constant Size of %" PRIu32 ", but the Source storage class (%s) is only allowed if the %s feature is enabled.\n%s\n",
+                             size, string_SpvStorageClass(source_sc),  Required8or16BitStorageClassFeature(source_sc, allows_16bit),
+                             module_state.DescribeInstruction(*copy_inst).c_str());
         }
     }
     return skip;

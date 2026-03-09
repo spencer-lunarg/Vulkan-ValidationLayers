@@ -1179,6 +1179,12 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
                 }
                 break;
             }
+            case spv::OpCopyMemorySized: {
+                if (stateless_data) {
+                    stateless_data->copy_memory_sized_inst.push_back(&insn);
+                }
+                break;
+            }
             case spv::OpTypeCooperativeMatrixNV:
             case spv::OpCooperativeMatrixMulAddNV:
             case spv::OpTypeCooperativeMatrixKHR:

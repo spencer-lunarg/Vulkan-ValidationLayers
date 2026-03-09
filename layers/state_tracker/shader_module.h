@@ -639,6 +639,7 @@ struct StatelessData {
     std::vector<const Instruction *> read_clock_inst;
     std::vector<const Instruction *> atomic_inst;
     std::vector<const Instruction *> group_inst;
+    std::vector<const Instruction *> copy_memory_sized_inst;
     // OpEmitStreamVertex/OpEndStreamPrimitive - only allowed in Geometry shader
     std::vector<const Instruction *> transform_feedback_stream_inst;
     std::vector<const Instruction *> fma_inst;

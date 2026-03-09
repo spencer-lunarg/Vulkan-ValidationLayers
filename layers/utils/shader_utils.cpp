@@ -19,6 +19,7 @@
 
 #include "shader_utils.h"
 
+#include "generated/device_features.h"
 #include "generated/spirv_grammar_helper.h"
 #include "generated/spirv_tools_commit_id.h"
 #include "state_tracker/shader_module.h"
@@ -153,6 +154,82 @@ VkShaderStageFlagBits ExecutionModelToShaderStageFlagBits(uint32_t mode) {
             break;
     }
     return VK_SHADER_STAGE_ALL;
+}
+
+bool Is8BitStorageClassAllowed(const DeviceFeatures& enabled_features,uint32_t storage_class) {
+     switch (storage_class) {
+        case spv::StorageClassPushConstant:
+            return enabled_features.storagePushConstant8;
+        case spv::StorageClassUniform:
+            return enabled_features.uniformAndStorageBuffer8BitAccess;
+        case spv::StorageClassStorageBuffer:
+        case spv::StorageClassShaderRecordBufferKHR:
+        case spv::StorageClassPhysicalStorageBuffer:
+            return enabled_features.storageBuffer8BitAccess ||
+                    enabled_features.uniformAndStorageBuffer8BitAccess;
+        case spv::StorageClassWorkgroup:
+        case spv::StorageClassFunction:
+        case spv::StorageClassPrivate:
+            return enabled_features.shaderInt8;
+        default:
+            break;
+    }
+    return false;
+}
+
+bool Is16BitStorageClassAllowed(const DeviceFeatures& enabled_features, uint32_t storage_class) {
+    switch (storage_class) {
+        case spv::StorageClassPushConstant:
+            return enabled_features.storagePushConstant16;
+        case spv::StorageClassUniform:
+            return enabled_features.uniformAndStorageBuffer16BitAccess;
+        case spv::StorageClassStorageBuffer:
+        case spv::StorageClassShaderRecordBufferKHR:
+        case spv::StorageClassPhysicalStorageBuffer:
+            return enabled_features.storageBuffer16BitAccess ||
+                    enabled_features.uniformAndStorageBuffer16BitAccess;
+        case spv::StorageClassInput:
+        case spv::StorageClassOutput:
+            return enabled_features.storageInputOutput16;
+        case spv::StorageClassWorkgroup:
+        case spv::StorageClassFunction:
+        case spv::StorageClassPrivate:
+            return enabled_features.shaderFloat16 || enabled_features.shaderInt16;
+        default:
+            break;
+    }
+    return false;
+}
+
+const char* Required8or16BitStorageClassFeature(uint32_t storage_class, bool allows_16bit) {
+    switch (storage_class) {
+        case spv::StorageClassPushConstant:
+            return allows_16bit ? "storagePushConstant16 or storagePushConstant8" : "storagePushConstant8";
+        case spv::StorageClassUniform:
+            return allows_16bit ? "uniformAndStorageBuffer16BitAccess or uniformAndStorageBuffer8BitAccess" : "uniformAndStorageBuffer8BitAccess";
+        case spv::StorageClassStorageBuffer:
+        case spv::StorageClassShaderRecordBufferKHR:
+        case spv::StorageClassPhysicalStorageBuffer:
+            return allows_16bit ? "storageBuffer16BitAccess, uniformAndStorageBuffer16BitAccess, storageBuffer8BitAccess or uniformAndStorageBuffer8BitAccess" : "storageBuffer8BitAccess or uniformAndStorageBuffer8BitAccess";
+        case spv::StorageClassInput:
+        case spv::StorageClassOutput:
+            if (allows_16bit) {
+                return "storageInputOutput16";
+            }
+            break;
+        case spv::StorageClassWorkgroup:
+        case spv::StorageClassFunction:
+        case spv::StorageClassPrivate:
+            return allows_16bit ? "shaderFloat16, shaderInt16, shaderInt8" : "shaderInt8";
+        default:
+            break;
+    }
+
+    // Adding these as "fallbacks" but these should be caught elsewhere already
+    if (allows_16bit) {
+        return "[This StorageClass is not allowed with 8-bit or 16-bit]";
+    }
+    return "[This StorageClass is not allowed with 8-bit]";
 }
 
 // This is used to help dump SPIR-V while debugging intermediate phases of any altercations to the SPIR-V

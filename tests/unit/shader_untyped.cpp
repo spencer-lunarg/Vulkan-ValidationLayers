@@ -419,3 +419,42 @@ TEST_F(NegativeShaderUntyped, MissingDataTypeOperand) {
     VkShaderObj cs_module = VkShaderObj::CreateFromASM(this, spirv.c_str(), VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_2);
     m_errorMonitor->VerifyFound();
 }
+
+TEST_F(NegativeShaderUntyped, CopyMemorySized) {
+    SetTargetApiVersion(VK_API_VERSION_1_2);
+    AddRequiredExtensions(VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME);
+    AddRequiredFeature(vkt::Feature::shaderUntypedPointers);
+    RETURN_IF_SKIP(Init());
+
+    const char *spv_source = R"(
+        OpCapability Shader
+        OpCapability UntypedPointersKHR
+        OpExtension "SPV_KHR_untyped_pointers"
+        OpMemoryModel Logical GLSL450
+        OpEntryPoint GLCompute %main "main" %v1 %v2
+        OpExecutionMode %main LocalSize 1 1 1
+        OpDecorate %struct Block
+        OpDecorate %v1 DescriptorSet 0
+        OpDecorate %v1 Binding 0
+        OpDecorate %v2 DescriptorSet 0
+        OpDecorate %v2 Binding 1
+        OpMemberDecorate %struct 0 Offset 0
+        %void = OpTypeVoid
+        %int = OpTypeInt 32 0
+        %int_2 = OpConstant %int 2
+        %struct = OpTypeStruct %int
+        %ptr = OpTypeUntypedPointerKHR StorageBuffer
+        %v1 = OpUntypedVariableKHR %ptr StorageBuffer %struct
+        %v2 = OpUntypedVariableKHR %ptr StorageBuffer %struct
+        %void_fn = OpTypeFunction %void
+        %main = OpFunction %void None %void_fn
+        %entry = OpLabel
+        OpCopyMemorySized %v2 %v1 %int_2
+        OpReturn
+        OpFunctionEnd
+    )";
+
+    m_errorMonitor->SetDesiredError("VUID-RuntimeSpirv-Size-11165");
+    VkShaderObj cs(*m_device, spv_source, VK_SHADER_STAGE_COMPUTE_BIT, SPV_ENV_VULKAN_1_2, SPV_SOURCE_ASM);
+    m_errorMonitor->VerifyFound();
+}

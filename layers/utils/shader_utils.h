@@ -24,6 +24,7 @@
 #include "containers/custom_containers.h"
 #include "utils/lock_utils.h"
 
+struct DeviceFeatures;
 namespace spirv {
 struct ResourceInterfaceVariable;
 }
@@ -68,6 +69,11 @@ inline ShaderObjectStage VkShaderStageToShaderObjectStage(VkShaderStageFlagBits 
 }
 
 VkShaderStageFlagBits ExecutionModelToShaderStageFlagBits(uint32_t mode);
+
+// Here for OpCopyMemorySized checks as needed in both CoreChecks (when constant) and GPU-AV
+bool Is8BitStorageClassAllowed(const DeviceFeatures& enabled_features, uint32_t storage_class);
+bool Is16BitStorageClassAllowed(const DeviceFeatures& enabled_features, uint32_t storage_class);
+const char* Required8or16BitStorageClassFeature(uint32_t storage_class, bool allows_16bit);
 
 class ValidationCache {
   public:
