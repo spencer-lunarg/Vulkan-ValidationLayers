@@ -3271,50 +3271,6 @@ TEST_F(NegativeGpuAVDescriptorHeap, HashingNoDescriptorCombinedImageSampler) {
     m_errorMonitor->VerifyFound();
 }
 
-TEST_F(NegativeGpuAVDescriptorHeap, HashingNullDescriptor) {
-    AddRequiredExtensions(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
-    AddRequiredFeature(vkt::Feature::nullDescriptor);
-    const VkLayerSettingEXT layer_setting{OBJECT_LAYER_NAME, "descriptor_hashing", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &kVkTrue};
-    RETURN_IF_SKIP(InitGpuAVDescriptorHeap({layer_setting}, false));
-
-    if (vk::GetPhysicalDeviceDescriptorSizeEXT(Gpu(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) !=
-        vk::GetPhysicalDeviceDescriptorSizeEXT(Gpu(), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)) {
-        GTEST_SKIP() << "Currently the find() on the GPU only checks a single size";
-    }
-
-    vkt::DescriptorHeap desc_heap(*this);
-    const VkDeviceSize resource_stride = heap_props.bufferDescriptorSize;
-    desc_heap.CreateResourceHeap(resource_stride);
-
-    // Not a storage, so might be the same, but we never see it to know
-    desc_heap.WriteNullDescriptorAtOffset(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0);
-
-    VkDescriptorSetAndBindingMappingEXT mapping = MakeSetAndBindingMapping(0, 0);
-    mapping.source = VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT;
-    mapping.sourceData.constantOffset.heapOffset = 0;
-    VkShaderDescriptorSetAndBindingMappingInfoEXT mapping_info = vku::InitStructHelper();
-    mapping_info.mappingCount = 1;
-    mapping_info.pMappings = &mapping;
-
-    char const* cs_source = R"glsl(
-        #version 450
-        layout(set = 0, binding = 0) buffer A { uint a; };
-        void main() {
-            a = 0;
-        }
-    )glsl";
-    vkt::HeapComputePipeline pipe(*m_device, cs_source, SPV_ENV_VULKAN_1_0, &mapping_info);
-
-    m_command_buffer.Begin();
-    desc_heap.BindResourceHeap(m_command_buffer);
-    vk::CmdBindPipeline(m_command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
-    vk::CmdDispatch(m_command_buffer, 1, 1, 1);
-    m_command_buffer.End();
-    m_errorMonitor->SetDesiredError("UNASSIGNED-DescriptorHeap-Wrong-DescriptorType");
-    m_default_queue->SubmitAndWait(m_command_buffer);
-    m_errorMonitor->VerifyFound();
-}
-
 TEST_F(NegativeGpuAVDescriptorHeap, HashingToManyDescriptors) {
     const uint32_t limit = 256;
     std::vector<VkLayerSettingEXT> layer_settings = {

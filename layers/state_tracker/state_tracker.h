@@ -2163,6 +2163,10 @@ class DeviceState : public vvl::BaseDevice {
     // This is only here because both GPU-AV and GPU Dump need to share this.
     // Normally we don't create dynamic objects, but this allows forward declaring and only allocating when people opt into this.
     std::unique_ptr<DescriptorHashing> descriptor_hashing;
+    // If we detect nullDescriptor is enabled, we add all the null descriptors for the user once
+    // (since there only a few, sometimes only 1, and will never change)
+    void AddNullDescriptorHeaps(const Location& loc);    // VK_EXT_descriptor_heap
+    void AddNullDescriptorBuffers(const Location& loc);  // VK_EXT_descriptor_buffer
 
     // Keep track of identifier -> state
     vvl::unordered_map<VkShaderModuleIdentifierEXT, std::shared_ptr<vvl::ShaderModule>> shader_identifier_map_;
