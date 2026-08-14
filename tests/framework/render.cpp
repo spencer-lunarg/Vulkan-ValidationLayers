@@ -346,6 +346,22 @@ void VkRenderFramework::InitFramework(void* instance_pnext) {
     }
 }
 
+void VkRenderFramework::InitShared(VkRenderFramework* shared_framework) {
+    owns_instance_and_device_ = false;
+    instance_ = shared_framework->instance_;
+    gpu_ = shared_framework->gpu_;
+    physDevProps_ = shared_framework->physDevProps_;
+    m_device = shared_framework->m_device;
+    m_render_target_fmt = shared_framework->m_render_target_fmt;
+
+    // Fresh command pool & buffer for this individual test
+    m_command_pool.Init(*m_device, m_device->graphics_queue_node_index_, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+    m_command_buffer.Init(*m_device, m_command_pool);
+
+    // Attach this test's local ErrorMonitor callback to the shared instance
+    m_errorMonitor->CreateCallback(instance_);
+}
+
 void VkRenderFramework::AddRequiredExtensions(const char* ext_name) {
     m_required_extensions.push_back(ext_name);
     AddRequestedInstanceExtensions(ext_name);
@@ -541,12 +557,23 @@ void VkRenderFramework::ShutdownFramework() {
         return;
     }
 
-    if (m_device && m_device->handle() != VK_NULL_HANDLE) {
-        m_device->Wait();
-    }
-
+    // Always clean up test-local command objects
     m_command_buffer.Destroy();
     m_command_pool.Destroy();
+
+    // If we are sharing the framework and don't own the instance/device, keep alive
+    if (!owns_instance_and_device_) {
+        if (m_errorMonitor) {
+            m_errorMonitor->DestroyCallback(instance_);
+        }
+        instance_ = VK_NULL_HANDLE;
+        m_device = nullptr;
+        return;
+    }
+
+    if (m_device && m_device->handle() != VK_NULL_HANDLE) {
+        m_device->Wait();
+    };
 
     if (m_second_queue) {
         m_second_command_buffer.Destroy();
