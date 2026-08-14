@@ -127,6 +127,13 @@ target_include_directories(vk_test_framework PUBLIC
     ${VVL_SOURCE_DIR}/layers/external
 )
 
+if (ANDROID)
+    # Force the linker to bind internal symbol references locally.
+    # This prevents the dynamic linker from hijacking VVL's calls to spirv-tools
+    # and routing them to the Qualcomm driver's older leaked symbols.
+    target_link_options(vk_test_framework PUBLIC "-Wl,-Bsymbolic")
+endif()
+
 if(SLANG_INSTALL_DIR)
     target_link_libraries(vk_test_framework PUBLIC slang::slang)
     target_compile_definitions(vk_test_framework PUBLIC VVL_USE_SLANG)
